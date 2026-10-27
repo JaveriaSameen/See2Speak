@@ -1,0 +1,10 @@
+# Python 3.10 - 3.12 recommended (PyTorch / Whisper wheels are most reliable there).
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9      # file uploads
+numpy
+opencv-python-headless
+ultralytics>=8.3             # YOLO-World v2 Small (yolov8s-worldv2.pt)
+openai-whisper               # Whisper base.en (runs locally; pulls in PyTorch)
+mediapipe                    # Face Landmarker (mouth movement)
+pytest                       # tests only

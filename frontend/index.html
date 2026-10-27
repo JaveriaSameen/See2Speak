@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>See2Speak – Slime Buddy</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="logo">See<b>2</b>Speak</div>
+  <div class="topbar-actions">
+    <button id="btnStart" class="btn primary">▶ Start game</button>
+    <button id="btnRecal" class="btn" disabled title="Relax your mouth so I can measure it">🙂 Recalibrate mouth</button>
+    <button id="btnFinish" class="btn" disabled>🏁 Finish</button>
+    <button id="btnRestart" class="btn" disabled>↻ Play again</button>
+    <button id="btnStop" class="btn danger" disabled>■ Stop camera &amp; mic</button>
+  </div>
+</header>
+
+<div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
+
+<main class="layout">
+  <!-- ============ A. MAIN GAME AREA ============ -->
+  <section class="stage-col" aria-label="Camera and game area">
+    <div class="stage" id="stage">
+      <video id="cam" autoplay playsinline muted></video>
+      <div class="placeholder" id="placeholder">
+        <p>Press <b>Start game</b>, allow the camera, then hold up a book, chair, cell phone, apple, pen or pencil.</p>
+      </div>
+
+      <!-- Detection boxes are created here by script.js from REAL detections -->
+      <div id="boxLayer" class="box-layer"></div>
+
+      <!-- the slime buddy (original character, unchanged artwork) -->
+      <div class="slime-wrap" id="slimeWrap" aria-hidden="true">
+        <div class="bubble" id="bubble">Show me an object!</div>
+        <span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span>
+
+        <div class="slime">
+          <svg viewBox="0 0 200 160" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#ff8fc0"/>
+                <stop offset=".65" stop-color="#ff7eb6"/>
+                <stop offset="1" stop-color="#ff4f9a"/>
+              </linearGradient>
+            </defs>
+            <!-- body -->
+            <path d="M22 144 Q8 144 14 128 Q42 120 42 92 C42 42 72 14 100 14 C128 14 158 42 158 92 Q158 120 186 128 Q192 144 178 144 Z"
+                  fill="url(#g)" stroke="#8a1b5c" stroke-width="8" stroke-linejoin="round"/>
+            <!-- shine -->
+            <ellipse cx="70" cy="40" rx="16" ry="9" fill="#fff" opacity=".55" transform="rotate(-30 70 40)"/>
+            <circle cx="52" cy="62" r="4" fill="#fff" opacity=".5"/>
+            <!-- cheeks -->
+            <ellipse cx="55" cy="104" rx="14" ry="10" fill="#ff4f9a" opacity=".75"/>
+            <ellipse cx="145" cy="104" rx="14" ry="10" fill="#ff4f9a" opacity=".75"/>
+
+            <!-- calm face -->
+            <g class="face-calm">
+              <g class="eye"><circle cx="70" cy="82" r="16" fill="#5a1048"/>
+                <circle cx="65" cy="76" r="5" fill="#fff"/></g>
+              <g class="eye"><circle cx="130" cy="82" r="16" fill="#5a1048"/>
+                <circle cx="125" cy="76" r="5" fill="#fff"/></g>
+              <path d="M88 104 Q100 116 112 104" fill="none" stroke="#5a1048" stroke-width="5" stroke-linecap="round"/>
+            </g>
+            <!-- happy face -->
+            <g class="face-happy">
+              <path d="M56 86 Q70 66 84 86" fill="none" stroke="#5a1048" stroke-width="6" stroke-linecap="round"/>
+              <path d="M116 86 Q130 66 144 86" fill="none" stroke="#5a1048" stroke-width="6" stroke-linecap="round"/>
+              <path d="M84 100 Q100 100 116 100 Q114 124 100 124 Q86 124 84 100 Z" fill="#5a1048" stroke="#5a1048" stroke-width="4" stroke-linejoin="round"/>
+              <path d="M92 116 Q100 108 108 116 Q100 124 92 116Z" fill="#ff5d8f"/>
+            </g>
+            <!-- NEW: gentle "try again" face (soft eyes, small wobbly smile) -->
+            <g class="face-oops">
+              <g class="eye"><circle cx="70" cy="84" r="15" fill="#5a1048"/>
+                <circle cx="65" cy="78" r="5" fill="#fff"/></g>
+              <g class="eye"><circle cx="130" cy="84" r="15" fill="#5a1048"/>
+                <circle cx="125" cy="78" r="5" fill="#fff"/></g>
+              <path d="M56 68 Q68 60 82 56" fill="none" stroke="#5a1048" stroke-width="5" stroke-linecap="round"/>
+              <path d="M118 56 Q132 60 144 68" fill="none" stroke="#5a1048" stroke-width="5" stroke-linecap="round"/>
+              <path d="M90 112 Q95 106 100 112 Q105 118 110 112" fill="none" stroke="#5a1048" stroke-width="5" stroke-linecap="round"/>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <div class="hud-score" aria-hidden="true">⭐ <span id="hudScore">0</span> pts</div>
+      <div class="mic-pill" id="micPill"><span class="dot"></span><span id="micText">Camera off</span></div>
+    </div>
+    <p class="hint">Tip: click a box to choose which object to practise. Good light and a plain background help detection. Thin objects (pens, pencils) are hardest to detect.</p>
+  </section>
+
+  <!-- ============ side panels ============ -->
+  <aside class="side">
+    <!-- B. WORD PRACTICE AREA -->
+    <section class="card" aria-labelledby="hPractice">
+      <h2 id="hPractice">Word practice</h2>
+      <div class="target-label">Target word</div>
+      <div id="targetWord" class="target-word" aria-live="polite">—</div>
+      <p id="targetHelp" class="muted">Hold up a supported object to begin.</p>
+
+      <div class="row">
+        <button id="btnListen" class="btn big" disabled>🔊 Listen to Pronunciation</button>
+      </div>
+      <div class="row">
+        <button id="btnRecord" class="btn big rec" disabled>🎤 Record</button>
+      </div>
+      <div id="recStatus" class="status" role="status" aria-live="polite">Waiting for an object…</div>
+
+      <dl class="result" id="resultBox" hidden>
+        <div><dt>Target</dt><dd id="rTarget">—</dd></div>
+        <div><dt>Your answer</dt><dd id="rAnswer">—</dd></div>
+        <div><dt>Result</dt><dd id="rResult">—</dd></div>
+        <div><dt>Points earned</dt><dd id="rPoints">—</dd></div>
+      </dl>
+      <p id="mouthMsg" class="mouth" hidden></p>
+    </section>
+
+    <!-- C. SCORE AREA -->
+    <section class="card" aria-labelledby="hScore">
+      <h2 id="hScore">Score</h2>
+      <div class="stats">
+        <div><span id="sScore" class="big-num">0</span><span class="lbl">Points</span></div>
+        <div><span id="sCorrect" class="big-num">0</span><span class="lbl">Correct</span></div>
+        <div><span id="sAttempts" class="big-num">0</span><span class="lbl">Attempts</span></div>
+      </div>
+      <div class="progress-label">Words collected: <b id="sProgressText">0 / 6</b></div>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0" id="progressBar">
+        <div id="progressFill"></div>
+      </div>
+      <ul id="wordChips" class="chips"></ul>
+    </section>
+
+    <section class="card slim-card" aria-labelledby="hSys">
+      <h2 id="hSys">System</h2>
+      <ul class="sys" id="sysList">
+        <li>Object detector: <span id="mDetector">…</span></li>
+        <li>Speech (Whisper): <span id="mSpeech">…</span></li>
+        <li>Mouth check: <span id="mMouth">…</span></li>
+        <li>Detection speed: <span id="mFps">–</span></li>
+      </ul>
+    </section>
+  </aside>
+</main>
+
+<!-- final session summary -->
+<dialog id="summary" aria-labelledby="sumTitle">
+  <h2 id="sumTitle">Session summary</h2>
+  <div class="stats">
+    <div><span id="sumScore" class="big-num">0</span><span class="lbl">Points</span></div>
+    <div><span id="sumCorrect" class="big-num">0</span><span class="lbl">Correct</span></div>
+    <div><span id="sumAttempts" class="big-num">0</span><span class="lbl">Attempts</span></div>
+  </div>
+  <p id="sumWords"></p>
+  <p class="muted small">Matching checks whether I heard the right word. It does not prove every sound was pronounced correctly.</p>
+  <h3>Recent sessions</h3>
+  <ul id="sumHistory" class="history"></ul>
+  <form method="dialog" class="row">
+    <button class="btn" value="close">Close</button>
+    <button id="sumAgain" class="btn primary" value="again">↻ Play again</button>
+  </form>
+</dialog>
+
+<script src="script.js"></script>
+</body>
+</html>
