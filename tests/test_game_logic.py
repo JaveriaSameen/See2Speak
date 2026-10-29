@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from backend import config
-from backend.facial_landmarks import (MouthSample, analyse_samples, metrics_from_points,
+from backend.facial_landmarks import (CalibrationTracker, LIP_INNER, LIP_OUTER, lip_outline, MouthSample, analyse_samples, metrics_from_points,
                                       EYE_L, EYE_R, UPPER, LOWER, LEFT, RIGHT)
 from backend.game_logic import GameStore, edit_distance, evaluate_answer, normalise
 
@@ -159,3 +159,47 @@ def test_lip_closure_for_b_p_m_words():
     never_closed = [MouthSample(0.2, 0.9)] * 10
     assert analyse_samples(never_closed, BASE, "Pen")["lip_closure"] is False
     assert analyse_samples(closed_then_open, BASE, "Chair")["lip_closure"] is None   # not b/p/m
+
+
+# ------------------------------------------------------------ new vocabulary
+def test_vocabulary_is_the_requested_fifteen():
+    assert [w.label for w in config.VOCABULARY] == [
+        "Book", "Cell phone", "Apple", "Pen", "Pencil", "Marker", "Ruler", "Water bottle",
+        "Paper clip", "Tape dispenser", "Eraser", "Notebook", "Stapler", "Scissors", "Glue stick"]
+    assert "chair" not in W
+    assert len({w.yolo_prompt for w in config.VOCABULARY}) == 15       # one distinct prompt per class
+    assert config.ROUND_TARGET == 15
+
+
+@pytest.mark.parametrize("key,said", [
+    ("ruler", "Scale."), ("ruler", "ruler"), ("water_bottle", "bottle"), ("paper_clip", "Paperclip"),
+    ("tape_dispenser", "tape"), ("glue_stick", "glue stick"), ("scissors", "scissors"),
+    ("marker", "marker pen"), ("notebook", "A notebook"), ("eraser", "Eraser!"), ("stapler", "stapler"),
+])
+def test_new_words_accept_expected_speech(key, said):
+    assert evaluate_answer(W[key], said).correct
+
+
+def test_lookalikes_are_not_confused():
+    assert not evaluate_answer(W["pen"], "marker").correct
+    assert not evaluate_answer(W["pencil"], "pen").correct
+    assert not evaluate_answer(W["book"], "notebook").correct
+    assert not evaluate_answer(W["notebook"], "book").correct
+
+
+# ------------------------------------------------- lips + calibration tracker
+def test_lip_loops_are_the_40_mediapipe_lip_landmarks():
+    assert len(LIP_OUTER) == len(LIP_INNER) == 20 and not set(LIP_OUTER) & set(LIP_INNER)
+    out = lip_outline(np.random.rand(478, 2).astype(np.float32))
+    assert len(out["outer"]) == 20 and len(out["inner"]) == 20
+
+
+def test_tracker_needs_real_neutral_samples():
+    t = CalibrationTracker(needed=5, max_open=0.1)
+    assert t.add(None)["progress"] == 0                               # no face
+    assert t.add(MouthSample(0.4, 0.9))["state"] == "mouth_open"      # talking: not counted
+    for i in range(4):
+        st = t.add(MouthSample(0.02, 0.9))
+        assert st["progress"] == pytest.approx((i + 1) / 5) and not st["complete"]
+    st = t.add(MouthSample(0.04, 0.95))
+    assert st["complete"] and st["progress"] == 1 and st["baseline_opening"] == pytest.approx(0.02)

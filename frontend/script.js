@@ -25,11 +25,14 @@ const els = {
   targetWord: $("targetWord"), targetHelp: $("targetHelp"), recStatus: $("recStatus"),
   resultBox: $("resultBox"), rTarget: $("rTarget"), rAnswer: $("rAnswer"), rResult: $("rResult"),
   rPoints: $("rPoints"), mouthMsg: $("mouthMsg"),
-  hudScore: $("hudScore"), sScore: $("sScore"), sCorrect: $("sCorrect"), sAttempts: $("sAttempts"),
+  sScore: $("sScore"), sCorrect: $("sCorrect"), sAttempts: $("sAttempts"),
   sProgressText: $("sProgressText"), progressBar: $("progressBar"), progressFill: $("progressFill"),
   wordChips: $("wordChips"), micPill: $("micPill"), micText: $("micText"),
   mDetector: $("mDetector"), mSpeech: $("mSpeech"), mMouth: $("mMouth"), mFps: $("mFps"),
   summary: $("summary"),
+  lipCanvas: $("lipCanvas"), calib: $("calib"), calibMsg: $("calibMsg"), calibFill: $("calibFill"),
+  calibStatus: $("calibStatus"), calibRetry: $("calibRetry"), calibSkip: $("calibSkip"),
+  openFill: $("openFill"), openBase: $("openBase"), openVal: $("openVal"), faceState: $("faceState"),
 };
 
 const S = {
@@ -119,7 +122,7 @@ function parkNextToTarget() {
 function renderStats(st) {
   if (!st) return;
   S.stats = st;
-  els.sScore.textContent = els.hudScore.textContent = st.score;
+  els.sScore.textContent = st.score;
   els.sCorrect.textContent = st.correct;
   els.sAttempts.textContent = st.attempts;
   els.sProgressText.textContent = `${st.mastered_count ?? st.mastered.length} / ${st.round_target}`;
@@ -147,7 +150,7 @@ function updateButtons() {
   els.btnStop.disabled = !on && !S.camStream;
   els.btnFinish.disabled = !on || busy;
   els.btnRestart.disabled = busy;
-  els.btnRecal.disabled = !on || busy || S.phase === "recording";
+  els.btnRecal.disabled = !(S.phase === "scanning" || S.phase === "ready");
   els.btnListen.disabled = !(S.target && (S.phase === "ready")) || S.audioPlaying;
   els.btnRecord.disabled = S.phase === "recording" ? false
     : !(S.target && S.phase === "ready") || S.audioPlaying;
@@ -212,25 +215,153 @@ function releaseDevices() {
   stopReference();
 }
 
-// -------------------------------------------------- mouth-baseline calibration
-async function calibrate() {
-  if (S.models.mouth && S.models.mouth !== "ready") { return; }
-  const prev = S.phase;
-  S.phase = "starting"; updateButtons();
-  els.micText.textContent = "Relax your face & keep your mouth closed…";
-  setStatus("Calibrating: relax your face and keep your mouth closed for a moment.");
-  await sleep(1200);
-  const frames = [];
-  for (let i = 0; i < 8; i++) { const f = await grabFrame(mouthCanvas, 480, 0.8); if (f) frames.push(f); await sleep(150); }
-  const fd = new FormData();
-  fd.append("session_id", S.sessionId);
-  frames.forEach((f, i) => fd.append("frames", f, `c${i}.jpg`));
-  try {
-    const r = await api("/api/calibrate", { method: "POST", body: fd });
-    banner(r.ok ? "" : r.message + " The mouth check will use an estimate instead.", r.ok ? "" : "info");
-  } catch (e) { banner(e.message, "error"); }
-  S.phase = prev === "off" ? "scanning" : prev; updateButtons();
+// ---------------------------------------------- live lip landmarks + calibration
+// Every number and every dot below comes from the backend's MediaPipe Face Landmarker
+// (/api/face). Nothing here is animated on a timer.
+const faceCanvas = document.createElement("canvas");
+const FACE_FRAME_W = 480;       // frame width sent for landmarking
+const FACE_MIN_GAP_MS = 40;
+const OPEN_FULL_SCALE = 0.5;    // meter full scale = lips open by 50% of the eye distance
+const CALIB_STALL_MS = 7000;    // no progress this long => offer Retry
+let faceLoopRunning = false, lastFace = null;
+S.calib = { active: false, resolve: null, lastProgress: 0, lastProgressAt: 0, finished: false };
+
+function sizeLipCanvas() {
+  const c = els.lipCanvas, dpr = window.devicePixelRatio || 1;
+  const w = Math.round(els.stage.clientWidth * dpr), h = Math.round(els.stage.clientHeight * dpr);
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
 }
+function drawLips(face) {
+  sizeLipCanvas();
+  const c = els.lipCanvas, g = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
+  g.clearRect(0, 0, c.width, c.height);
+  if (!face || !face.face) return;
+  // the video is shown mirrored, so x is flipped; the canvas covers exactly the video area
+  const px = ([x, y]) => [(1 - x) * c.width, y * c.height];
+  const loop = (pts, line, dot) => {
+    g.beginPath();
+    pts.map(px).forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.closePath();
+    g.lineWidth = 2 * dpr; g.strokeStyle = line; g.shadowColor = "#000a"; g.shadowBlur = 3 * dpr; g.stroke();
+    g.shadowBlur = 0; g.fillStyle = dot;
+    pts.map(px).forEach(([x, y]) => { g.beginPath(); g.arc(x, y, 2.6 * dpr, 0, Math.PI * 2); g.fill(); });
+  };
+  loop(face.lips.outer, "#7CFFB2", "#ffffff");   // outer lip outline
+  loop(face.lips.inner, "#ffd0e6", "#ff4f9a");   // inner lip (mouth opening) outline
+}
+new ResizeObserver(() => { drawLips(lastFace); }).observe(els.stage);
+
+function updateMouthBar(r) {
+  if (!r) { els.openFill.style.width = "0"; els.openVal.textContent = "–"; els.openBase.hidden = true;
+    els.faceState.textContent = "Face: waiting"; els.faceState.classList.remove("ok"); return; }
+  if (!r.face) {
+    els.openFill.style.width = "0"; els.openVal.textContent = "–";
+    els.faceState.textContent = "Face not detected"; els.faceState.classList.remove("ok");
+  } else {
+    els.openFill.style.width = Math.min(100, 100 * r.opening / OPEN_FULL_SCALE) + "%";
+    els.openVal.textContent = Math.round(r.opening * 100) + "%";
+    els.faceState.textContent = "Face detected ✓"; els.faceState.classList.add("ok");
+  }
+  if (r.baseline_opening != null) {
+    els.openBase.hidden = false;
+    els.openBase.style.left = Math.min(100, 100 * r.baseline_opening / OPEN_FULL_SCALE) + "%";
+    els.openBase.title = `Your calibrated neutral mouth: ${Math.round(r.baseline_opening * 100)}%`;
+  } else els.openBase.hidden = true;
+}
+
+async function faceLoop() {
+  if (faceLoopRunning) return;
+  faceLoopRunning = true;
+  while (S.camStream) {
+    if (!S.sessionId || S.phase === "processing" || S.phase === "starting") { await sleep(150); continue; }
+    if (S.models.mouth && S.models.mouth !== "ready") {
+      lastFace = null; drawLips(null);
+      els.faceState.textContent = S.models.mouth.startsWith("error") ? "Mouth check unavailable" : "Loading face model…";
+      await sleep(1000); continue;
+    }
+    try {
+      const blob = await grabFrame(faceCanvas, FACE_FRAME_W, 0.7);
+      if (!blob) { await sleep(200); continue; }
+      const fd = new FormData();
+      fd.append("image", blob, "f.jpg"); fd.append("session_id", S.sessionId);
+      fd.append("calibrating", S.calib.active ? "1" : "0");
+      const r = await api("/api/face", { method: "POST", body: fd });
+      if (!S.camStream) break;
+      lastFace = r; drawLips(r); updateMouthBar(r);
+      if (S.calib.active && r.calibration) handleCalibration(r.calibration);
+    } catch (e) {
+      els.faceState.textContent = "Face check error"; await sleep(1000);
+    }
+    await sleep(FACE_MIN_GAP_MS);
+  }
+  faceLoopRunning = false; lastFace = null; drawLips(null); updateMouthBar(null);
+}
+
+function showCalib(title, msg, status, cls = "") {
+  els.calib.hidden = false; els.calib.className = "calib " + cls;
+  els.calib.querySelector(".calib-title").textContent = title;
+  els.calibMsg.textContent = msg; els.calibStatus.textContent = status;
+}
+function endCalibration(result) {
+  const c = S.calib; c.active = false;
+  els.stage.classList.remove("calibrating");
+  els.calibRetry.hidden = true; els.calib.hidden = true;
+  const done = c.resolve; c.resolve = null;
+  if (done) done(result);
+}
+function handleCalibration(c) {
+  const cal = S.calib;
+  els.calibFill.style.width = (c.progress * 100) + "%";
+  if (c.progress > cal.lastProgress) { cal.lastProgress = c.progress; cal.lastProgressAt = performance.now(); }
+  if (c.complete && !cal.finished) {
+    cal.finished = true;
+    els.calibFill.style.width = "100%";
+    showCalib("Mouth Calibration", "Calibration Complete",
+      `Neutral mouth opening: ${(c.baseline_opening * 100).toFixed(1)}% of eye distance`, "done");
+    setTimeout(() => endCalibration("done"), 1600);
+    return;
+  }
+  if (cal.finished) return;
+  els.calibRetry.hidden = true;
+  if (c.state === "no_face") showCalib("Mouth Calibration", "Keep your face visible", "Face not detected");
+  else if (c.state === "mouth_open") showCalib("Mouth Calibration", c.message, `${c.collected} / ${c.needed} samples`);
+  else showCalib("Mouth Calibration", "Calibrating...", `${c.collected} / ${c.needed} samples`);
+  if (performance.now() - cal.lastProgressAt > CALIB_STALL_MS) {
+    const why = c.state === "mouth_open" ? "Your mouth looks open. Relax it and keep it gently closed."
+      : "I can't see your face. Check the light and sit about an arm's length from the camera.";
+    showCalib("Mouth Calibration", why, "No progress. You can retry or skip.", "warn");
+    els.calibRetry.hidden = false;
+  }
+}
+async function restartCalibrationOnServer() {
+  const cal = S.calib;
+  cal.lastProgress = 0; cal.lastProgressAt = performance.now(); cal.finished = false;
+  els.calibFill.style.width = "0%";
+  showCalib("Mouth Calibration", "Keep your face visible", "Waiting for your face…");
+  const fd = new FormData(); fd.append("session_id", S.sessionId);
+  try { await api("/api/calibration/start", { method: "POST", body: fd }); }
+  catch (e) { banner(e.message, "error"); }
+}
+// Runs the visible calibration; resolves "done" or "skipped". Phase is restored afterwards.
+async function runCalibration() {
+  if (S.models.mouth && S.models.mouth !== "ready") { banner("Mouth check isn't available, so calibration was skipped.", "info"); return "skipped"; }
+  const prev = S.phase;
+  S.phase = "calibrating"; updateButtons();
+  els.stage.classList.add("calibrating");
+  setStatus("Mouth calibration: keep your face visible and your mouth relaxed.");
+  const result = new Promise((resolve) => { S.calib.resolve = resolve; });
+  S.calib.active = true;
+  await restartCalibrationOnServer();
+  const r = await result;
+  if (S.phase === "off") return r;             // camera was stopped meanwhile
+  if (S.phase === "calibrating") S.phase = prev === "calibrating" ? "scanning" : prev;
+  if (r === "skipped") banner("Calibration skipped. The mouth check will use an estimate instead.", "info");
+  setStatus(S.target ? `Ready: say “${S.labels[S.target]}”.` : "Looking for an object…");
+  updateButtons();
+  return r;
+}
+els.calibRetry.onclick = restartCalibrationOnServer;
+els.calibSkip.onclick = () => endCalibration("skipped");
 
 // ------------------------------------------------------------------ detection
 function updateTracks(dets) {
@@ -513,7 +644,9 @@ function showMouth(m) {
 
 // ------------------------------------------------------------ game lifecycle
 async function newSession() {
-  const s = await api("/api/session", { method: "POST" });
+  const fd = new FormData();
+  if (S.sessionId) fd.append("inherit_from", S.sessionId);   // keep the calibrated mouth baseline
+  const s = await api("/api/session", { method: "POST", body: fd });
   S.sessionId = s.session_id; S.summaryShown = false; S.manualKey = null;
   S.tracks.clear(); els.boxLayer.innerHTML = "";
   renderStats(s); resetResult(); setTarget(null);
@@ -528,7 +661,9 @@ async function startGame() {
     await newSession();
     els.micText.textContent = "Camera on";
     S.phase = "scanning";
-    await calibrate();
+    faceLoop();                      // live lip landmarks (runs while the camera is on)
+    await runCalibration();          // visible, landmark-driven calibration
+    if (S.phase === "off") return;   // user pressed Stop during calibration
     S.phase = S.target ? "ready" : "scanning";
     setStatus("Looking for an object…"); setBubble(bubbleDefault());
     react("new", "Show me an object!", 2500);
@@ -549,6 +684,7 @@ async function endSession() {
 
 async function stopAll(summary) {
   stopRecording(); stopReference();
+  if (S.calib.active) endCalibration("skipped");
   S.phase = "off";
   const st = await endSession();
   releaseDevices();
@@ -594,7 +730,7 @@ els.btnStart.onclick = startGame;
 els.btnStop.onclick = () => stopAll(false);
 els.btnFinish.onclick = () => stopAll(true);
 els.btnRestart.onclick = restartGame;
-els.btnRecal.onclick = () => S.sessionId && calibrate();
+els.btnRecal.onclick = () => { if (S.sessionId && (S.phase === "scanning" || S.phase === "ready")) runCalibration(); };
 els.btnListen.onclick = playReference;
 els.btnRecord.onclick = () => (S.phase === "recording" ? stopRecording() : startRecording());
 $("sumAgain").addEventListener("click", () => setTimeout(restartGame, 0));

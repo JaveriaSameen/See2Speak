@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config
 from .detection import Detector
-from .facial_landmarks import MouthAnalyser, MouthSample
+from .facial_landmarks import CalibrationTracker, MouthAnalyser, MouthSample
 from .game_logic import GameStore, evaluate_answer
 from .speech_recognition import AudioError, Transcriber
 
@@ -40,6 +40,7 @@ detector = Detector()
 transcriber = Transcriber()
 mouth = MouthAnalyser()
 baselines: dict[str, MouthSample] = {}     # neutral-mouth baseline per session
+calibrators: dict[str, CalibrationTracker] = {}
 model_status: dict[str, str] = {"detector": "loading", "speech": "loading", "mouth": "loading"}
 
 
@@ -71,8 +72,10 @@ def get_config():
 
 # --------------------------------------------------------------- sessions
 @app.post("/api/session")
-def new_session():
+def new_session(inherit_from: str = Form("")):
     sid = store.start_session()
+    if inherit_from in baselines:            # "Play again" keeps the calibrated neutral mouth
+        baselines[sid] = baselines[inherit_from]
     return {"session_id": sid, **store.stats(sid)}
 
 
@@ -90,7 +93,7 @@ def session_stats(sid: str):
 @app.post("/api/session/{sid}/end")
 def end_session(sid: str):
     _need_session(sid)
-    baselines.pop(sid, None)
+    calibrators.pop(sid, None)          # (baseline is kept so Play again can inherit it)
     return store.end_session(sid)
 
 
@@ -123,6 +126,37 @@ def calibrate(session_id: str = Form(...), frames: List[UploadFile] = File(...))
         return {"ok": False, "message": "I couldn't see your face. Face the camera in good light and try again."}
     baselines[session_id] = base
     return {"ok": True, "message": "Neutral mouth saved."}
+
+
+# ------------------------------------------------- live lips + calibration
+@app.post("/api/calibration/start")
+def calibration_start(session_id: str = Form(...)):
+    """(Re)start neutral-mouth calibration. Progress then advances only via real /api/face samples."""
+    _need_session(session_id)
+    baselines.pop(session_id, None)
+    calibrators[session_id] = CalibrationTracker()
+    return calibrators[session_id].status("measuring", "Mouth Calibration")
+
+
+@app.post("/api/face")
+def face(image: UploadFile = File(...), session_id: str = Form(""), calibrating: str = Form("0")):
+    """One live frame -> lip outline (normalised 0..1) + mouth opening/width from MediaPipe.
+
+    While calibrating, the same sample also feeds the calibration tracker."""
+    if model_status["mouth"] != "ready":
+        raise HTTPException(503, f"Mouth analysis not ready ({model_status['mouth']})")
+    try:
+        out, sample = mouth.track(image.file.read())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    tracker = calibrators.get(session_id)
+    if calibrating == "1" and tracker is not None:
+        out["calibration"] = tracker.add(sample)
+        if tracker.baseline is not None:
+            baselines[session_id] = tracker.baseline
+    base = baselines.get(session_id)
+    out["baseline_opening"] = None if base is None else round(base.opening, 4)
+    return out
 
 
 # ---------------------------------------------------------------- attempts

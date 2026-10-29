@@ -9,30 +9,40 @@
 <body>
 <header class="topbar">
   <div class="logo">See<b>2</b>Speak</div>
+
+  <!-- compact score strip (always visible) -->
+  <div class="scorebar" aria-label="Score and progress">
+    <span class="sb-main">⭐ <b id="sScore">0</b> pts</span>
+    <span class="sb-sub"><b id="sCorrect">0</b> correct · <b id="sAttempts">0</b> attempts</span>
+    <span class="sb-prog">
+      <span class="progress" role="progressbar" aria-label="Words collected" aria-valuemin="0" aria-valuemax="15" aria-valuenow="0" id="progressBar"><span id="progressFill"></span></span>
+      <span class="sb-sub"><b id="sProgressText">0 / 15</b> words</span>
+    </span>
+  </div>
+
   <div class="topbar-actions">
     <button id="btnStart" class="btn primary">▶ Start game</button>
-    <button id="btnRecal" class="btn" disabled title="Relax your mouth so I can measure it">🙂 Recalibrate mouth</button>
-    <button id="btnFinish" class="btn" disabled>🏁 Finish</button>
-    <button id="btnRestart" class="btn" disabled>↻ Play again</button>
-    <button id="btnStop" class="btn danger" disabled>■ Stop camera &amp; mic</button>
+    <button id="btnFinish" class="btn" disabled>Finish</button>
+    <button id="btnRestart" class="btn" disabled>Play again</button>
+    <button id="btnStop" class="btn quiet" disabled title="Release the camera and microphone">■ Stop camera</button>
   </div>
 </header>
 
 <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
 
 <main class="layout">
-  <!-- ============ A. MAIN GAME AREA ============ -->
+  <!-- ============ camera + character ============ -->
   <section class="stage-col" aria-label="Camera and game area">
     <div class="stage" id="stage">
       <video id="cam" autoplay playsinline muted></video>
       <div class="placeholder" id="placeholder">
-        <p>Press <b>Start game</b>, allow the camera, then hold up a book, chair, cell phone, apple, pen or pencil.</p>
+        <p>Press <b>Start game</b> and allow the camera.<br>Then hold up an object, such as a book, pen or apple.</p>
       </div>
 
       <!-- Detection boxes are created here by script.js from REAL detections -->
       <div id="boxLayer" class="box-layer"></div>
 
-      <!-- the slime buddy (original character, unchanged artwork) -->
+<!-- the slime buddy (original character, unchanged artwork) -->
       <div class="slime-wrap" id="slimeWrap" aria-hidden="true">
         <div class="bubble" id="bubble">Show me an object!</div>
         <span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span>
@@ -85,62 +95,73 @@
         </div>
       </div>
 
-      <div class="hud-score" aria-hidden="true">⭐ <span id="hudScore">0</span> pts</div>
+      <!-- MediaPipe lip landmarks (dots + outline), drawn by script.js from real /api/face results -->
+      <canvas id="lipCanvas" class="lip-canvas" aria-hidden="true"></canvas>
+
+      <!-- visible mouth calibration -->
+      <div class="calib" id="calib" role="status" aria-live="polite" hidden>
+        <div class="calib-title">Mouth Calibration</div>
+        <div class="calib-msg" id="calibMsg">Keep your face visible</div>
+        <div class="calib-track"><div id="calibFill"></div></div>
+        <div class="calib-row">
+          <span id="calibStatus">Calibrating…</span>
+          <span class="calib-btns">
+            <button id="calibRetry" class="btn small" hidden>Retry</button>
+            <button id="calibSkip" class="btn small quiet">Skip</button>
+          </span>
+        </div>
+      </div>
+
       <div class="mic-pill" id="micPill"><span class="dot"></span><span id="micText">Camera off</span></div>
     </div>
-    <p class="hint">Tip: click a box to choose which object to practise. Good light and a plain background help detection. Thin objects (pens, pencils) are hardest to detect.</p>
+
+    <!-- live mouth measurement -->
+    <div class="mouthbar" id="mouthBar">
+      <span class="mb-label">Mouth opening</span>
+      <span class="meter" id="openMeter" title="Lip opening measured from MediaPipe landmarks, relative to eye distance"><i id="openFill"></i><b id="openBase" hidden></b></span>
+      <span class="mb-val" id="openVal">–</span>
+      <span class="mb-face" id="faceState">Face: waiting</span>
+      <button id="btnRecal" class="btn small" disabled title="Measure your neutral (relaxed) mouth again">Recalibrate</button>
+    </div>
+    <p class="hint">Click a box to choose an object. The lip outline shows what MediaPipe sees; it measures mouth opening, not pronunciation.</p>
   </section>
 
-  <!-- ============ side panels ============ -->
+  <!-- ============ practice panel (one card) ============ -->
   <aside class="side">
-    <!-- B. WORD PRACTICE AREA -->
-    <section class="card" aria-labelledby="hPractice">
-      <h2 id="hPractice">Word practice</h2>
-      <div class="target-label">Target word</div>
+    <section class="card practice" aria-labelledby="hPractice">
+      <h2 id="hPractice" class="sr-only">Word practice</h2>
+      <div class="eyebrow">Say this word</div>
       <div id="targetWord" class="target-word" aria-live="polite">—</div>
       <p id="targetHelp" class="muted">Hold up a supported object to begin.</p>
 
-      <div class="row">
-        <button id="btnListen" class="btn big" disabled>🔊 Listen to Pronunciation</button>
-      </div>
-      <div class="row">
+      <div class="actions">
+        <button id="btnListen" class="btn big" disabled>🔊 Listen</button>
         <button id="btnRecord" class="btn big rec" disabled>🎤 Record</button>
       </div>
       <div id="recStatus" class="status" role="status" aria-live="polite">Waiting for an object…</div>
 
       <dl class="result" id="resultBox" hidden>
         <div><dt>Target</dt><dd id="rTarget">—</dd></div>
-        <div><dt>Your answer</dt><dd id="rAnswer">—</dd></div>
+        <div><dt>You said</dt><dd id="rAnswer">—</dd></div>
         <div><dt>Result</dt><dd id="rResult">—</dd></div>
-        <div><dt>Points earned</dt><dd id="rPoints">—</dd></div>
+        <div><dt>Points</dt><dd id="rPoints">—</dd></div>
       </dl>
       <p id="mouthMsg" class="mouth" hidden></p>
     </section>
 
-    <!-- C. SCORE AREA -->
-    <section class="card" aria-labelledby="hScore">
-      <h2 id="hScore">Score</h2>
-      <div class="stats">
-        <div><span id="sScore" class="big-num">0</span><span class="lbl">Points</span></div>
-        <div><span id="sCorrect" class="big-num">0</span><span class="lbl">Correct</span></div>
-        <div><span id="sAttempts" class="big-num">0</span><span class="lbl">Attempts</span></div>
-      </div>
-      <div class="progress-label">Words collected: <b id="sProgressText">0 / 6</b></div>
-      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0" id="progressBar">
-        <div id="progressFill"></div>
-      </div>
+    <details class="fold">
+      <summary>Collected words</summary>
       <ul id="wordChips" class="chips"></ul>
-    </section>
-
-    <section class="card slim-card" aria-labelledby="hSys">
-      <h2 id="hSys">System</h2>
+    </details>
+    <details class="fold">
+      <summary>System status</summary>
       <ul class="sys" id="sysList">
-        <li>Object detector: <span id="mDetector">…</span></li>
-        <li>Speech (Whisper): <span id="mSpeech">…</span></li>
-        <li>Mouth check: <span id="mMouth">…</span></li>
-        <li>Detection speed: <span id="mFps">–</span></li>
+        <li>Object detector <span id="mDetector">…</span></li>
+        <li>Speech (Whisper) <span id="mSpeech">…</span></li>
+        <li>Mouth check <span id="mMouth">…</span></li>
+        <li>Detection speed <span id="mFps">–</span></li>
       </ul>
-    </section>
+    </details>
   </aside>
 </main>
 

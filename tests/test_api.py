@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend import main
+from backend.facial_landmarks import MouthSample
 from backend.game_logic import GameStore
 
 
@@ -26,8 +27,18 @@ class FakeSTT:
 
 
 class FakeMouth:
+    """Stand-in for MediaPipe: returns scripted samples so calibration can be exercised."""
+    next_sample = None          # MouthSample or None (= no face)
+
     def analyse(self, frames, baseline, label):
         return {"status": "movement", "message": "stub"}
+
+    def track(self, jpeg):
+        s = FakeMouth.next_sample
+        if s is None:
+            return {"face": False}, None
+        return {"face": True, "lips": {"outer": [[0.4, 0.6]] * 20, "inner": [[0.5, 0.6]] * 20},
+                "opening": s.opening, "width": s.width}, s
 
 
 @pytest.fixture
@@ -48,7 +59,9 @@ def post_attempt(c, sid, aid, key="apple"):
 
 def test_config_lists_vocabulary(client):
     labels = [w["label"] for w in client.get("/api/config").json()["vocabulary"]]
-    assert labels == ["Book", "Chair", "Cell phone", "Apple", "Pen", "Pencil"]
+    assert labels == ["Book", "Cell phone", "Apple", "Pen", "Pencil", "Marker", "Ruler", "Water bottle",
+                      "Paper clip", "Tape dispenser", "Eraser", "Notebook", "Stapler", "Scissors", "Glue stick"]
+    assert "Chair" not in labels
 
 
 def test_correct_attempt_scores_and_duplicate_does_not(client):
@@ -90,3 +103,61 @@ def test_end_session_summary_and_history(client):
 def test_frontend_is_served(client):
     r = client.get("/")
     assert r.status_code == 200 and "See2Speak" in r.text
+
+
+# ------------------------------------------------ live lips + calibration
+def face(c, sid, calibrating=False):
+    return c.post("/api/face", data={"session_id": sid, "calibrating": "1" if calibrating else "0"},
+                  files=[("image", ("f.jpg", b"x", "image/jpeg"))]).json()
+
+
+def test_face_endpoint_returns_lips_and_opening(client):
+    sid = client.post("/api/session").json()["session_id"]
+    FakeMouth.next_sample = MouthSample(0.03, 0.9)
+    r = face(client, sid)
+    assert r["face"] and len(r["lips"]["outer"]) == 20 and len(r["lips"]["inner"]) == 20
+    assert r["opening"] == 0.03 and r["baseline_opening"] is None
+    FakeMouth.next_sample = None
+    assert face(client, sid) == {"face": False, "baseline_opening": None}
+
+
+def test_calibration_progress_comes_only_from_real_samples(client):
+    sid = client.post("/api/session").json()["session_id"]
+    assert client.post("/api/calibration/start", data={"session_id": sid}).json()["progress"] == 0
+    FakeMouth.next_sample = None                       # no face: no progress
+    assert face(client, sid, True)["calibration"]["progress"] == 0
+    FakeMouth.next_sample = MouthSample(0.5, 0.9)      # mouth wide open: no progress
+    r = face(client, sid, True)["calibration"]
+    assert r["progress"] == 0 and r["state"] == "mouth_open"
+    FakeMouth.next_sample = MouthSample(0.02, 0.9)     # relaxed: progress
+    r = face(client, sid, True)["calibration"]
+    assert 0 < r["progress"] < 1 and r["state"] == "measuring"
+    for _ in range(30):
+        r = face(client, sid, True)
+    assert r["calibration"]["complete"] and r["baseline_opening"] == pytest.approx(0.02)
+    # a later (non-calibrating) frame still reports the stored baseline
+    assert face(client, sid)["baseline_opening"] == pytest.approx(0.02)
+
+
+def test_calibration_can_be_retried(client):
+    sid = client.post("/api/session").json()["session_id"]
+    FakeMouth.next_sample = MouthSample(0.02, 0.9)
+    client.post("/api/calibration/start", data={"session_id": sid})
+    for _ in range(20):
+        face(client, sid, True)
+    client.post("/api/calibration/start", data={"session_id": sid})
+    r = face(client, sid, True)["calibration"]
+    assert not r["complete"] and r["collected"] == 1
+
+
+def test_play_again_inherits_calibrated_baseline(client):
+    s1 = client.post("/api/session").json()["session_id"]
+    FakeMouth.next_sample = MouthSample(0.02, 0.9)
+    client.post("/api/calibration/start", data={"session_id": s1})
+    for _ in range(20):
+        face(client, s1, True)
+    client.post(f"/api/session/{s1}/end")
+    s2 = client.post("/api/session", data={"inherit_from": s1}).json()["session_id"]
+    assert face(client, s2)["baseline_opening"] == pytest.approx(0.02)
+    s3 = client.post("/api/session").json()["session_id"]           # no inherit -> no baseline
+    assert face(client, s3)["baseline_opening"] is None
