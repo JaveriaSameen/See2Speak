@@ -66,6 +66,8 @@ def get_config():
     return {
         "points_correct": config.POINTS_CORRECT,
         "round_target": config.ROUND_TARGET,
+        "detect_imgsz": config.DETECT_IMGSZ,
+        "min_conf": config.DETECT_MIN_CONF,
         "vocabulary": [{"key": w.key, "label": w.label} for w in config.VOCABULARY],
     }
 

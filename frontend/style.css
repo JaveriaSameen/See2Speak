@@ -61,7 +61,7 @@ button{font:inherit}
 /* ---------- detection boxes (real detections, created by script.js) ---------- */
 .box-layer{position:absolute;inset:0}
 .box{position:absolute;border:3px solid var(--box);border-radius:10px;
-  box-shadow:0 0 14px #7CFFB255;cursor:pointer;transition:left .25s,top .25s,width .25s,height .25s}
+  box-shadow:0 0 14px #7CFFB255;cursor:pointer;transition:left .1s,top .1s,width .1s,height .1s}
 .box::before,.box::after{content:"";position:absolute;width:18px;height:18px;border:5px solid var(--box)}
 .box::before{top:-5px;left:-5px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
 .box::after{bottom:-5px;right:-5px;border-left:0;border-top:0;border-radius:0 0 8px 0}

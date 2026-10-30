@@ -59,9 +59,9 @@ def post_attempt(c, sid, aid, key="apple"):
 
 def test_config_lists_vocabulary(client):
     labels = [w["label"] for w in client.get("/api/config").json()["vocabulary"]]
-    assert labels == ["Book", "Cell phone", "Apple", "Pen", "Pencil", "Marker", "Ruler", "Water bottle",
-                      "Paper clip", "Tape dispenser", "Eraser", "Notebook", "Stapler", "Scissors", "Glue stick"]
-    assert "Chair" not in labels
+    assert labels == ["Book", "Cell phone", "Apple", "Pen", "Water bottle", "Tape dispenser", "Stapler", "Scissors", "Glue stick"]
+    removed = {"Chair", "Paper clip", "Pencil", "Marker", "Notebook", "Ruler", "Eraser"}
+    assert not removed & set(labels)
 
 
 def test_correct_attempt_scores_and_duplicate_does_not(client):

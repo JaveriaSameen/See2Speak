@@ -43,11 +43,6 @@ def test_near_match_never_correct():
     assert not r.correct and r.near_match
 
 
-def test_pen_vs_pencil_not_confused():
-    assert not evaluate_answer(W["pen"], "pencil").correct
-    assert not evaluate_answer(W["pencil"], "pen").correct
-
-
 def test_empty_is_incorrect():
     assert not evaluate_answer(W["apple"], "").correct
 
@@ -161,30 +156,29 @@ def test_lip_closure_for_b_p_m_words():
     assert analyse_samples(closed_then_open, BASE, "Chair")["lip_closure"] is None   # not b/p/m
 
 
-# ------------------------------------------------------------ new vocabulary
-def test_vocabulary_is_the_requested_fifteen():
+# ------------------------------------------------------------ vocabulary
+def test_vocabulary_is_the_requested_nine():
     assert [w.label for w in config.VOCABULARY] == [
-        "Book", "Cell phone", "Apple", "Pen", "Pencil", "Marker", "Ruler", "Water bottle",
-        "Paper clip", "Tape dispenser", "Eraser", "Notebook", "Stapler", "Scissors", "Glue stick"]
-    assert "chair" not in W
-    assert len({w.yolo_prompt for w in config.VOCABULARY}) == 15       # one distinct prompt per class
-    assert config.ROUND_TARGET == 15
+        "Book", "Cell phone", "Apple", "Pen", "Water bottle", "Tape dispenser", "Stapler", "Scissors", "Glue stick"]
+    for gone in ("chair", "paper_clip", "pencil", "marker", "notebook", "ruler", "eraser"):
+        assert gone not in W
+    assert config.ROUND_TARGET == 9
+    all_prompts = [p for w in config.VOCABULARY for p in w.prompts]
+    assert len(all_prompts) == len(set(all_prompts))                 # no prompt used twice
 
 
 @pytest.mark.parametrize("key,said", [
-    ("ruler", "Scale."), ("ruler", "ruler"), ("water_bottle", "bottle"), ("paper_clip", "Paperclip"),
+    ("water_bottle", "bottle"), ("water_bottle", "flask"), ("water_bottle", "Water flask."),
     ("tape_dispenser", "tape"), ("glue_stick", "glue stick"), ("scissors", "scissors"),
-    ("marker", "marker pen"), ("notebook", "A notebook"), ("eraser", "Eraser!"), ("stapler", "stapler"),
+    ("stapler", "stapler"), ("pen", "Pen!"),
 ])
-def test_new_words_accept_expected_speech(key, said):
+def test_words_accept_expected_speech(key, said):
     assert evaluate_answer(W[key], said).correct
 
 
-def test_lookalikes_are_not_confused():
+def test_removed_words_no_longer_count():
+    assert not evaluate_answer(W["pen"], "pencil").correct
     assert not evaluate_answer(W["pen"], "marker").correct
-    assert not evaluate_answer(W["pencil"], "pen").correct
-    assert not evaluate_answer(W["book"], "notebook").correct
-    assert not evaluate_answer(W["notebook"], "book").correct
 
 
 # ------------------------------------------------- lips + calibration tracker

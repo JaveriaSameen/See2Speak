@@ -7,10 +7,11 @@
 const API = new URLSearchParams(location.search).get("api") || "";
 
 // ---- tunables --------------------------------------------------------------
-const STABLE_HITS = 2;        // consecutive detections before an object counts as "locked"
-const LOSE_MISSES = 6;        // detection rounds without the target before it is released
-const DETECT_FRAME_W = 640;   // width of frames sent for detection
-const DETECT_MIN_GAP_MS = 120;
+const LOCK_HITS = 2;          // sightings before an object becomes the practice target (boxes show on the 1st)
+const BOX_GRACE_MS = 500;     // an object not re-detected for this long loses its box (prevents flicker, not stale boxes)
+const PRUNE_EVERY_MS = 100;   // how often expired boxes are removed (independent of detection speed)
+let DETECT_FRAME_W = 512;     // overwritten from /api/config so it always matches the server's inference size
+const DETECT_MIN_GAP_MS = 10; // the server round trip already paces the loop
 const MAX_RECORD_MS = 4000;   // auto-stop so a forgotten recording can't hang
 const MOUTH_FRAME_MS = 100;   // mouth frames sampled during recording
 const MOUTH_MAX_FRAMES = 50;
@@ -40,7 +41,7 @@ const S = {
   sessionId: null,
   camStream: null, micStream: null,
   vocab: [], labels: {},   // key -> label
-  tracks: new Map(),       // key -> {hits, misses, det}
+  tracks: new Map(),       // key -> {hits, last, missed, det}
   target: null, manualKey: null,
   audioPlaying: false,
   models: {},
@@ -220,7 +221,7 @@ function releaseDevices() {
 // (/api/face). Nothing here is animated on a timer.
 const faceCanvas = document.createElement("canvas");
 const FACE_FRAME_W = 480;       // frame width sent for landmarking
-const FACE_MIN_GAP_MS = 40;
+const FACE_MIN_GAP_MS = 100;    // ~8 lip updates/s: smooth enough, and leaves CPU for object detection
 const OPEN_FULL_SCALE = 0.5;    // meter full scale = lips open by 50% of the eye distance
 const CALIB_STALL_MS = 7000;    // no progress this long => offer Retry
 let faceLoopRunning = false, lastFace = null;
@@ -365,28 +366,37 @@ els.calibSkip.onclick = () => endCalibration("skipped");
 
 // ------------------------------------------------------------------ detection
 function updateTracks(dets) {
-  const seen = new Set();
+  const now = performance.now(), seen = new Set();
   for (const d of dets) {
     if (seen.has(d.key)) continue;            // best box per word (list is sorted by confidence)
     seen.add(d.key);
-    const t = S.tracks.get(d.key) || { hits: 0, misses: 0 };
-    t.hits++; t.misses = 0; t.det = d;
+    const t = S.tracks.get(d.key) || { hits: 0 };
+    t.hits++; t.last = now; t.missed = false; t.det = d;
     S.tracks.set(d.key, t);
   }
-  for (const [k, t] of S.tracks) {
-    if (!seen.has(k)) { t.misses++; if (t.misses >= LOSE_MISSES) S.tracks.delete(k); }
-  }
+  for (const [k, t] of S.tracks) if (!seen.has(k)) t.missed = true;   // not in the latest result (still inside grace)
 }
-const isStable = (t) => t && t.hits >= STABLE_HITS && t.misses < LOSE_MISSES;
+// Remove boxes/targets not re-detected within the grace period. Runs on a timer, so a slow or stalled
+// detection request can never leave a stale box on screen.
+function pruneTracks() {
+  const now = performance.now(), active = S.phase === "scanning" || S.phase === "ready";
+  for (const [k, t] of S.tracks) {
+    if (!active) { t.last = now; continue; }          // detection paused (recording etc.): keep boxes, restart grace on resume
+    if (now - t.last > BOX_GRACE_MS) S.tracks.delete(k);
+  }
+  if (active) { chooseTarget(); renderBoxes(); }
+}
+setInterval(pruneTracks, PRUNE_EVERY_MS);
+const isStable = (t) => t && t.hits >= LOCK_HITS;
 
 function chooseTarget() {
   if (S.manualKey && !S.tracks.has(S.manualKey)) S.manualKey = null;
   let next = null;
   if (S.manualKey && isStable(S.tracks.get(S.manualKey))) next = S.manualKey;
-  else if (S.target && isStable(S.tracks.get(S.target))) next = S.target;       // sticky
+  else if (S.target && isStable(S.tracks.get(S.target))) next = S.target;       // sticky while still inside grace
   else {
     let best = null;
-    for (const [k, t] of S.tracks) if (isStable(t) && t.misses === 0 && (!best || t.det.confidence > best.det.confidence)) best = t;
+    for (const [k, t] of S.tracks) if (isStable(t) && !t.missed && (!best || t.det.confidence > best.det.confidence)) best = t;
     next = best ? best.det.key : null;
   }
   if (next !== S.target) setTarget(next);   // fires ONCE per change, not per frame
@@ -418,7 +428,6 @@ function setTarget(key) {
 function renderBoxes() {
   const live = new Set();
   for (const [key, t] of S.tracks) {
-    if (!(t.hits >= STABLE_HITS)) continue;
     live.add(key);
     let el = els.boxLayer.querySelector(`[data-key="${key}"]`);
     if (!el) {
@@ -434,7 +443,7 @@ function renderBoxes() {
     el.style.left = (1 - (b.x + b.w)) * 100 + "%"; el.style.top = b.y * 100 + "%";
     el.style.width = b.w * 100 + "%"; el.style.height = b.h * 100 + "%";
     el.classList.toggle("selected", key === S.target);
-    el.classList.toggle("stale", t.misses > 0);
+    el.classList.toggle("stale", !!t.missed);
     const tag = el.firstChild;
     tag.textContent = S.labels[key] || key;
     const small = document.createElement("small");
@@ -465,7 +474,11 @@ async function detectLoop() {
       S.fpsMs.push(performance.now() - t0); if (S.fpsMs.length > 10) S.fpsMs.shift();
       const avg = S.fpsMs.reduce((a, b) => a + b, 0) / S.fpsMs.length;
       els.mFps.textContent = `${Math.round(avg)} ms/frame (≈${(1000 / avg).toFixed(1)} fps), model ${r.inference_ms} ms`;
-      if (!S.target && !r.detections.length) setStatus("No supported object in view. Try better light or move closer.");
+      if (!S.target && !r.detections.length) {
+        const c = r.best_rejected;     // seen, but under the confidence threshold: no box is drawn
+        setStatus(c ? `I think I see “${c.label}” (${Math.round(c.confidence * 100)}%), but I need ${Math.round(r.min_conf * 100)}%+ to show it. Hold it closer, steadier or in better light.`
+                    : "No supported object in view. Try better light or move closer.");
+      }
       banner("");
     } catch (e) {
       banner(e.message, "error"); await sleep(1500);
@@ -739,6 +752,7 @@ window.addEventListener("beforeunload", releaseDevices);
 (async function init() {
   try {
     const cfg = await api("/api/config");
+    if (cfg.detect_imgsz) DETECT_FRAME_W = cfg.detect_imgsz;
     S.vocab = cfg.vocabulary; S.labels = Object.fromEntries(cfg.vocabulary.map((w) => [w.key, w.label]));
     renderStats({ score: 0, attempts: 0, correct: 0, mastered: [], round_target: cfg.round_target });
   } catch (e) { banner(e.message, "error"); }
