@@ -64,8 +64,10 @@ class Transcriber:
             return {"text": "", "silent": True, "seconds": round(seconds, 2), "rms": rms}
         self.load()
         with self._lock:
+            vocab_prompt = ", ".join(w.label for w in config.VOCABULARY) + "."
             result = self._model.transcribe(
                 audio, language="en", fp16=False,
-                condition_on_previous_text=False, temperature=0.0)
+                condition_on_previous_text=False, temperature=0.0,
+                initial_prompt=vocab_prompt)
         return {"text": result["text"].strip(), "silent": False,
                 "seconds": round(seconds, 2), "rms": rms}

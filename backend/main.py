@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
@@ -21,12 +22,14 @@ from .facial_landmarks import CalibrationTracker, MouthAnalyser, MouthSample
 from .game_logic import GameStore, evaluate_answer
 from .speech_recognition import AudioError, Transcriber
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("see2speak")
 
 
 @asynccontextmanager
 async def lifespan(_app):
-    threading.Thread(target=_load_models, daemon=True).start()   # server starts instantly
+    if not _SKIP_LIFESPAN and not getattr(config, "TESTING", False):
+        threading.Thread(target=_load_models, daemon=True).start()   # server starts instantly
     yield
 
 
@@ -42,17 +45,37 @@ mouth = MouthAnalyser()
 baselines: dict[str, MouthSample] = {}     # neutral-mouth baseline per session
 calibrators: dict[str, CalibrationTracker] = {}
 model_status: dict[str, str] = {"detector": "loading", "speech": "loading", "mouth": "loading"}
+_models_loaded = False
+_loading_lock = threading.Lock()
+_SKIP_LIFESPAN = False   # set to True in tests to prevent background model loading
+
+
+def _load_single(name: str, obj):
+    if getattr(obj, "ready", False):
+        model_status[name] = "ready"
+        return
+    try:
+        log.info("Loading %s model...", name)
+        obj.load()
+        model_status[name] = "ready"
+        log.info("%s model ready.", name.capitalize())
+    except Exception as e:     # keep serving; report the reason to the UI
+        log.exception("Failed to load %s: %s", name, e)
+        model_status[name] = f"error: {e}"
 
 
 def _load_models():
-    """Load models in the background so the server starts instantly."""
-    for name, obj in (("detector", detector), ("speech", transcriber), ("mouth", mouth)):
-        try:
-            obj.load()
-            model_status[name] = "ready"
-        except Exception as e:     # keep serving; report the reason to the UI
-            log.exception("Failed to load %s", name)
-            model_status[name] = f"error: {e}"
+    """Load models concurrently in the background so the server starts instantly."""
+    global _models_loaded
+    with _loading_lock:
+        if _models_loaded:
+            return
+        _models_loaded = True
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(_load_single, name, obj)
+                   for name, obj in (("detector", detector), ("speech", transcriber), ("mouth", mouth))]
+        for f in futures:
+            f.result()
 
 
 # ------------------------------------------------------------------ meta
@@ -232,3 +255,9 @@ def _result_from_row(row: dict, word) -> dict:
 
 # Frontend last, so /api/* routes win.
 app.mount("/", StaticFiles(directory=str(config.FRONTEND_DIR), html=True), name="frontend")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=False)
+

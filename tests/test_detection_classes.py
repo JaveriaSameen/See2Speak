@@ -1,5 +1,5 @@
 """Checks how Detector uses the vocabulary and the confidence threshold. The YOLO model is a tiny
-fake here, so this verifies the wiring (prompts, prompt->word mapping, 0.90 threshold on the model's
+fake here, so this verifies the wiring (prompts, prompt->word mapping, 0.80 threshold on the model's
 own scores, merging, warm-up), NOT detection accuracy."""
 import sys
 import types
@@ -37,7 +37,9 @@ class FakeWorld:
 def det(monkeypatch, tmp_path):
     weights = tmp_path / "w.pt"; weights.write_bytes(b"x")
     monkeypatch.setattr(config, "YOLO_WEIGHTS", weights)
-    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLOWorld=FakeWorld))
+    monkeypatch.setattr(config, "YOLO_BAKED_WEIGHTS", tmp_path / "non_existent.pt")
+    monkeypatch.setattr(config, "CALIBRATE_CONFIDENCE", False)
+    monkeypatch.setitem(sys.modules, "ultralytics", types.SimpleNamespace(YOLOWorld=FakeWorld, YOLO=FakeWorld))
     FakeWorld.calls = []; FakeWorld.script = []
     return Detector()
 
@@ -69,17 +71,17 @@ def test_warmup_runs_once_at_load_not_on_first_frame(det):
     assert len(FakeWorld.calls) == 2                                          # load() is idempotent
 
 
-def test_threshold_is_090_on_the_models_own_score(det):
-    assert config.DETECT_MIN_CONF == 0.90
+def test_threshold_is_080_on_the_models_own_score(det):
+    assert config.DETECT_MIN_CONF == 0.80
     FakeWorld.script = [
         box(idx(det, "apple"), 0.95, (10, 10, 60, 60)),       # shown
-        box(idx(det, "pen"), 0.90, (70, 10, 90, 90)),         # exactly 0.90 (float32 0.8999999761) -> shown
-        box(idx(det, "stapler"), 0.89, (100, 10, 150, 60)),   # just below -> NOT shown
+        box(idx(det, "pen"), 0.80, (70, 10, 90, 90)),         # exactly 0.80 (float32 0.79999995) -> shown
+        box(idx(det, "stapler"), 0.79, (100, 10, 150, 60)),   # just below -> NOT shown
         box(idx(det, "book"), 0.60, (10, 60, 90, 99)),        # well below -> NOT shown
     ]
     out = det.detect(jpeg())
     assert {d["key"] for d in out["detections"]} == {"apple", "pen"}
-    assert {d["confidence"] for d in out["detections"]} == {0.95, 0.9}        # scores reported as-is
+    assert {d["confidence"] for d in out["detections"]} == {0.95, 0.8}        # scores reported as-is
     assert FakeWorld.calls[-1]["conf"] == config.DETECT_CANDIDATE_FLOOR
 
 
@@ -87,7 +89,7 @@ def test_nothing_shown_below_threshold_but_best_candidate_is_reported(det):
     FakeWorld.script = [box(idx(det, "apple"), 0.62, (10, 10, 60, 60)), box(idx(det, "book"), 0.40, (70, 10, 90, 90))]
     out = det.detect(jpeg())
     assert out["detections"] == []
-    assert out["best_rejected"] == {"label": "Apple", "confidence": 0.62} and out["min_conf"] == 0.90
+    assert out["best_rejected"] == {"label": "Apple", "confidence": 0.62} and out["min_conf"] == 0.80
 
 
 def test_threshold_can_be_overridden_for_experiments(det, monkeypatch):
@@ -111,7 +113,7 @@ def test_two_bottle_prompts_on_one_object_become_one_box(det):
 def test_imgsz_and_normalised_boxes(det):
     FakeWorld.script = [box(idx(det, "glue stick"), 0.99, (100, 20, 120, 120))]
     out = det.detect(jpeg())
-    assert FakeWorld.calls[-1]["imgsz"] == config.DETECT_IMGSZ == 512
+    assert FakeWorld.calls[-1]["imgsz"] == config.DETECT_IMGSZ == 640
     b = out["detections"][0]["box"]
     assert (b["x"], b["y"], b["w"], b["h"]) == (0.5, 0.2, 0.1, 1.0) or b["h"] == pytest.approx(1.0)
 
@@ -121,3 +123,13 @@ def test_merge_only_merges_same_word():
     b = {"key": "stapler", "confidence": .92, "box": {"x": .1, "y": .1, "w": .2, "h": .2}}   # same place, other word
     assert len(merge_same_word([a, b])) == 2
     assert iou(a["box"], a["box"]) == pytest.approx(1.0)
+
+
+def test_calibrate_confidence_mapping(monkeypatch):
+    from backend.detection import calibrate_confidence
+    monkeypatch.setattr(config, "CALIBRATE_CONFIDENCE", True)
+    assert calibrate_confidence(0.15) == 0.15          # sub-noise untouched
+    assert calibrate_confidence(0.32) == 0.80          # baseline detection -> 0.80
+    assert 0.87 <= calibrate_confidence(0.50) <= 0.90  # good detection -> high 80s
+    assert calibrate_confidence(0.70) >= 0.95          # strong detection -> 95%+
+

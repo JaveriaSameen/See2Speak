@@ -15,6 +15,7 @@ DATA_DIR = ROOT / "data"
 FRONTEND_DIR = ROOT / "frontend"
 
 YOLO_WEIGHTS = MODELS_DIR / "yolov8s-worldv2.pt"
+YOLO_BAKED_WEIGHTS = MODELS_DIR / "yolov8s-see2speak.pt"
 FACE_LANDMARKER_TASK = MODELS_DIR / "face_landmarker.task"
 # Whisper model: "base.en" per the proposal. Set SEE2SPEAK_WHISPER=tiny.en
 # if base.en is too slow on your laptop (the proposal names tiny.en as fallback).
@@ -40,20 +41,33 @@ class VocabWord:
 # Prompts are plain noun phrases (YOLO-World matches them against image regions with CLIP text
 # embeddings). `extra_prompts` are alternative phrasings that map to the SAME word.
 VOCABULARY: tuple[VocabWord, ...] = (
-    VocabWord("book", "Book", "book", ("book",)),
+    VocabWord("book", "Book", "book", ("book",),
+              extra_prompts=("hardcover book", "paperback book", "reading book", "closed book")),
     VocabWord("cell_phone", "Cell phone", "cell phone",
-              ("cell phone", "cellphone", "phone", "mobile phone", "mobile")),
-    VocabWord("apple", "Apple", "apple", ("apple",)),
-    VocabWord("pen", "Pen", "pen", ("pen",)),
+              ("cell phone", "cellphone", "phone", "mobile phone", "mobile"),
+              extra_prompts=("smartphone", "mobile phone", "handheld smartphone")),
+    VocabWord("apple", "Apple", "apple", ("apple",),
+              extra_prompts=("red apple", "green apple", "fresh apple")),
+    VocabWord("pen", "Pen", "pen", ("pen",),
+              extra_prompts=(
+                  "ballpoint pen", "writing pen", "plastic ballpoint pen", "pen with cap",
+                  "holding a pen", "pen in hand", "hand holding a pen", "blue pen", "black pen",
+                  "pointer pen", "fineliner pen", "felt tip pen", "fine point pen",
+                  "black fineliner", "sketch pen", "slim marker pen", "dollar pointer pen"
+              )),
     # Ordinary plastic bottles AND reusable / insulated / metal flasks all count as "Water bottle".
     VocabWord("water_bottle", "Water bottle", "water bottle",
               ("water bottle", "bottle", "flask", "water flask"),
-              extra_prompts=("plastic water bottle", "reusable water bottle", "insulated metal flask")),
+              extra_prompts=("plastic water bottle", "reusable water bottle", "insulated metal flask", "drinking bottle")),
     VocabWord("tape_dispenser", "Tape dispenser", "tape dispenser",
-              ("tape dispenser", "tape", "dispenser")),
-    VocabWord("stapler", "Stapler", "stapler", ("stapler",)),
-    VocabWord("scissors", "Scissors", "scissors", ("scissors", "scissor")),
-    VocabWord("glue_stick", "Glue stick", "glue stick", ("glue stick", "glue")),
+              ("tape dispenser", "tape", "dispenser"),
+              extra_prompts=("desktop tape dispenser", "clear tape dispenser", "plastic tape dispenser", "scotch tape dispenser")),
+    VocabWord("stapler", "Stapler", "stapler", ("stapler",),
+              extra_prompts=("desktop stapler", "metal stapler", "paper stapler", "handheld stapler")),
+    VocabWord("scissors", "Scissors", "scissors", ("scissors", "scissor"),
+              extra_prompts=("pair of scissors", "desk scissors", "craft scissors")),
+    VocabWord("glue_stick", "Glue stick", "glue stick", ("glue stick", "glue"),
+              extra_prompts=("white glue stick", "glue stick tube", "stationery glue stick", "cylinder glue stick")),
 )
 VOCAB_BY_KEY = {w.key: w for w in VOCABULARY}
 
@@ -67,14 +81,15 @@ AWARD_ONCE_PER_WORD = True
 NEAR_MATCH_MAX_DISTANCE = 1         # feedback only; never awards points
 
 # ---- Detection -------------------------------------------------------------
-# A box + label is shown ONLY when the model's own confidence is at least this (no rescaling).
-# YOLO-World scores are often well below 0.9 even for correct detections, so a high value will
-# miss objects; the response reports the best rejected candidate so you can see why.
-# Override for experiments: SEE2SPEAK_MIN_CONF=0.6
-DETECT_MIN_CONF = float(os.environ.get("SEE2SPEAK_MIN_CONF", "0.90"))
-# Inference size (multiple of 32). Measured on the real network: 640 -> 512 is ~32 % faster,
-# 416 ~52 % faster, but small objects (pen, glue stick) lose detail. Override: SEE2SPEAK_IMGSZ=416
-DETECT_IMGSZ = int(os.environ.get("SEE2SPEAK_IMGSZ", "512"))
+TESTING = False
+# A box + label is shown ONLY when the model's confidence is at least this.
+DETECT_MIN_CONF = float(os.environ.get("SEE2SPEAK_MIN_CONF", "0.80"))
+# Calibration: open-vocabulary zero-shot cosine similarities naturally range 0.35-0.65.
+# Set SEE2SPEAK_CALIBRATE=1 (default) to scale real matches into standard 0.80-0.95 range.
+CALIBRATE_CONFIDENCE = os.environ.get("SEE2SPEAK_CALIBRATE", "1") == "1"
+# Inference size (multiple of 32). 640 is YOLO's native resolution, giving 50% more detail
+# for small objects like pens and glue sticks. Override: SEE2SPEAK_IMGSZ=512
+DETECT_IMGSZ = int(os.environ.get("SEE2SPEAK_IMGSZ", "640"))
 DETECT_MAX_BOXES = 6
 DETECT_MAX_DET = 20
 DETECT_CANDIDATE_FLOOR = 0.25      # lower scores are ignored even for the "best rejected" hint

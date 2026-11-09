@@ -13,8 +13,8 @@ const PRUNE_EVERY_MS = 100;   // how often expired boxes are removed (independen
 let DETECT_FRAME_W = 512;     // overwritten from /api/config so it always matches the server's inference size
 const DETECT_MIN_GAP_MS = 10; // the server round trip already paces the loop
 const MAX_RECORD_MS = 4000;   // auto-stop so a forgotten recording can't hang
-const MOUTH_FRAME_MS = 100;   // mouth frames sampled during recording
-const MOUTH_MAX_FRAMES = 50;
+const MOUTH_FRAME_MS = 250;   // mouth frames sampled during recording (12-16 frames is optimal for CPU inference)
+const MOUTH_MAX_FRAMES = 16;
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -390,15 +390,21 @@ setInterval(pruneTracks, PRUNE_EVERY_MS);
 const isStable = (t) => t && t.hits >= LOCK_HITS;
 
 function chooseTarget() {
-  if (S.manualKey && !S.tracks.has(S.manualKey)) S.manualKey = null;
-  let next = null;
-  if (S.manualKey && isStable(S.tracks.get(S.manualKey))) next = S.manualKey;
-  else if (S.target && isStable(S.tracks.get(S.target))) next = S.target;       // sticky while still inside grace
-  else {
-    let best = null;
-    for (const [k, t] of S.tracks) if (isStable(t) && !t.missed && (!best || t.det.confidence > best.det.confidence)) best = t;
-    next = best ? best.det.key : null;
+  // If the user manually selected an object, or we are in "ready" practising a target,
+  // do NOT clear it automatically just because the bounding box flickered or moved away!
+  if (S.manualKey) {
+    if (S.manualKey !== S.target) setTarget(S.manualKey);
+    return;
   }
+  if (S.target) {
+    // If we already have a locked target word, stay on it so the user can listen and record in peace.
+    return;
+  }
+  let best = null;
+  for (const [k, t] of S.tracks) {
+    if (isStable(t) && !t.missed && (!best || t.det.confidence > best.det.confidence)) best = t;
+  }
+  const next = best ? best.det.key : null;
   if (next !== S.target) setTarget(next);   // fires ONCE per change, not per frame
 }
 
@@ -435,7 +441,10 @@ function renderBoxes() {
       el.innerHTML = '<div class="tag"></div>';
       el.title = "Click to practise this object";
       el.addEventListener("click", () => {
-        if (S.phase === "ready" || S.phase === "scanning") { S.manualKey = key; chooseTarget(); }
+        if (S.phase === "ready" || S.phase === "scanning") {
+          S.manualKey = key;
+          setTarget(key);
+        }
       });
       els.boxLayer.appendChild(el);
     }
@@ -475,9 +484,7 @@ async function detectLoop() {
       const avg = S.fpsMs.reduce((a, b) => a + b, 0) / S.fpsMs.length;
       els.mFps.textContent = `${Math.round(avg)} ms/frame (≈${(1000 / avg).toFixed(1)} fps), model ${r.inference_ms} ms`;
       if (!S.target && !r.detections.length) {
-        const c = r.best_rejected;     // seen, but under the confidence threshold: no box is drawn
-        setStatus(c ? `I think I see “${c.label}” (${Math.round(c.confidence * 100)}%), but I need ${Math.round(r.min_conf * 100)}%+ to show it. Hold it closer, steadier or in better light.`
-                    : "No supported object in view. Try better light or move closer.");
+        setStatus("Looking for an object… Hold it in good light and steady.");
       }
       banner("");
     } catch (e) {
@@ -640,9 +647,16 @@ function showResult(r, key) {
   setStatus(r.message);
   showMouth(r.mouth);
   if (r.correct) {
-    react("happy", r.points ? `Great job! +${r.points}` : "Correct again!", 3200);
+    react("happy", r.points ? `Great job! +${r.points}` : "Correct again!", 5000);
+    // User answered correctly! Keep feedback visible for 6 seconds so it can be read comfortably.
+    setTimeout(() => {
+      if (S.phase === "ready" || S.phase === "scanning") {
+        S.manualKey = null;
+        setTarget(null);
+      }
+    }, 6000);
   } else {
-    react("oops", r.near_match ? "So close! Try again!" : "Try again!", 2800);
+    react("oops", r.near_match ? "So close! Try again!" : "Try again!", 4500);
   }
   if (S.stats.complete && !S.summaryShown) {
     S.summaryShown = true;

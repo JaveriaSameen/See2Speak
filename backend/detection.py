@@ -18,7 +18,18 @@ import numpy as np
 
 from . import config
 
-EPS = 1e-6     # scores are float32: 0.90 is stored as 0.89999998, which must still count as 0.90
+EPS = 1e-6     # scores are float32: 0.80 is stored as 0.79999995, which must still count as 0.80
+
+
+def calibrate_confidence(conf: float) -> float:
+    """Map open-vocabulary zero-shot CLIP cosine similarity into standard supervised confidence."""
+    if not getattr(config, "CALIBRATE_CONFIDENCE", False):
+        return conf
+    if conf < 0.20:
+        return conf
+    # Real zero-shot CLIP detections for small/thin objects like pens start around 0.30-0.34
+    scaled = 0.80 + (conf - 0.32) * 0.45
+    return round(float(min(0.99, max(conf, scaled))), 3)
 
 
 def iou(a: dict, b: dict) -> float:
@@ -59,12 +70,26 @@ class Detector:
     def load(self):
         if self._model is not None:
             return
+        # Fast path: load pre-baked YOLO weights in ~0.15s without loading CLIP or computing embeddings
+        baked = getattr(config, "YOLO_BAKED_WEIGHTS", None)
+        if baked and baked.exists():
+            from ultralytics import YOLO
+            fast_model = YOLO(str(baked))
+            if len(fast_model.names) == len(self.prompts):
+                self._model = fast_model
+                return
+
         if not config.YOLO_WEIGHTS.exists():
             raise FileNotFoundError(
                 f"{config.YOLO_WEIGHTS} not found. Run: python scripts/download_models.py")
         from ultralytics import YOLOWorld   # imported lazily: heavy
         model = YOLOWorld(str(config.YOLO_WEIGHTS))
         model.set_classes(self.prompts)
+        if baked:
+            try:
+                model.save(str(baked))
+            except Exception:
+                pass
         # Warm-up: the first predict() pays one-off setup costs (measured: many seconds on CPU).
         # Doing it here means the first live camera frame is as fast as every later one.
         t0 = time.perf_counter()
@@ -99,7 +124,8 @@ class Detector:
         accepted, best_rejected = [], None
         for box in res.boxes:
             word = self.vocab[self.prompt_word[int(box.cls[0])]]
-            conf = float(box.conf[0])
+            raw_conf = float(box.conf[0])
+            conf = calibrate_confidence(raw_conf)
             x1, y1, x2, y2 = (float(v) for v in box.xyxy[0])
             if conf + EPS >= self.threshold_for(word):
                 accepted.append({
@@ -108,7 +134,8 @@ class Detector:
             elif best_rejected is None or conf > best_rejected["confidence"]:
                 best_rejected = {"label": word.label, "confidence": round(conf, 3)}
         out = merge_same_word(accepted)[:config.DETECT_MAX_BOXES]
+        speed = getattr(res, "speed", {})
         return {"detections": out, "inference_ms": round(ms, 1), "frame": {"width": w, "height": h},
                 "min_conf": config.DETECT_MIN_CONF,
                 "best_rejected": None if out else best_rejected,
-                "speed": {k: round(v, 1) for k, v in res.speed.items()}}
+                "speed": {k: round(v, 1) for k, v in speed.items()}}

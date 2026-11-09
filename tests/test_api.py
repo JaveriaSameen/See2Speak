@@ -7,7 +7,7 @@ import wave
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import main
+from backend import config, main
 from backend.facial_landmarks import MouthSample
 from backend.game_logic import GameStore
 
@@ -43,12 +43,16 @@ class FakeMouth:
 
 @pytest.fixture
 def client(monkeypatch):
+    monkeypatch.setattr(config, "TESTING", True)
+    monkeypatch.setattr(main, "_SKIP_LIFESPAN", True)
+    monkeypatch.setattr(main, "_load_models", lambda: None)
     monkeypatch.setattr(main, "store", GameStore(":memory:"))
     monkeypatch.setattr(main, "transcriber", FakeSTT())
     monkeypatch.setattr(main, "mouth", FakeMouth())
     monkeypatch.setitem(main.model_status, "speech", "ready")
     monkeypatch.setitem(main.model_status, "mouth", "ready")
     monkeypatch.setitem(main.model_status, "detector", "ready")
+    # _SKIP_LIFESPAN suppresses the background model-loading thread during tests.
     return TestClient(main.app)
 
 

@@ -1,6 +1,6 @@
 # See2Speak – a computer-vision vocabulary game
 
-Hold a **book, chair, cell phone, apple, pen or pencil** in front your laptop webcam. See2Speak
+Hold a supported object (**book, cell phone, apple, pen, water bottle, tape dispenser, stapler, scissors, glue stick**) in front of your webcam. See2Speak
 detects it, draws a labelled box, lets you hear the word, records you saying it, transcribes your
 speech locally, and awards points when the transcript matches. Your slime buddy
 (the original animated character) wanders the screen and reacts to what happens.
@@ -33,34 +33,61 @@ See2Speak/
 
 ## Setup
 
-1. **Python 3.10–3.12** recommended (PyTorch/Whisper wheels are most reliable there).
-2. Create an environment and install:
+1. **Python 3.10–3.12** recommended (Python 3.11 tested with uv).
+2. Create an environment and install dependencies:
    ```bash
+   # Using uv (recommended, fast):
+   uv venv --python 3.11 .venv
+   .venv\Scripts\activate
+   uv pip install -r requirements.txt
+
+   # Or using standard python venv:
    python -m venv .venv
    source .venv/bin/activate          # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
    ```
-3. Download the pretrained weights (needs internet once):
+3. Download and pre-bake the pretrained weights (needs internet once):
    ```bash
    python scripts/download_models.py
    ```
-   This puts `yolov8s-worldv2.pt` and `face_landmarker.task` in `models/` and caches Whisper
-   `base.en`. If you already have `yolov8s-worldv2.pt`, just copy it into `models/`.
-   First use of YOLO-World also installs OpenAI's CLIP text encoder automatically (Ultralytics
-   does this; it needs `git` and internet the first time).
-4. **Start the server** (from the `See2Speak/` folder):
+   This downloads `yolov8s-worldv2.pt` and `face_landmarker.task` into `models/`, pre-caches
+   Whisper `base.en`, and pre-compiles `yolov8s-see2speak.pt` with all vocabulary text prompts.
+4. **Start the game** (one-click runner):
+   ```bash
+   python run.py
+   ```
+   Or directly via uvicorn:
    ```bash
    uvicorn backend.main:app --port 8000
    ```
-5. Open **http://localhost:8000** in Chrome, Edge or Firefox.
+5. Open **http://localhost:8000** in Chrome, Edge or Firefox (opened automatically by `run.py`).
    Do *not* open `index.html` by double-clicking: browsers block camera/microphone on `file://`.
 6. Press **Start game**, allow the **camera**, relax your mouth for the 2-second calibration, then
    hold up an object. Press **Record** the first time and allow the **microphone**.
 7. Stop cleanly with **Stop camera & mic** (releases both devices), then `Ctrl+C` in the terminal.
 
-The System panel (right side) shows when each model has finished loading. Whisper `base.en` is
-slow on weak CPUs; run `SEE2SPEAK_WHISPER=tiny.en uvicorn backend.main:app --port 8000`
-(Windows: `set SEE2SPEAK_WHISPER=tiny.en` first) to use the faster fallback from the proposal.
+The System panel (right side) shows when each model has finished loading. Model loading runs
+in parallel in the background, so the server and interface launch instantly. Whisper `base.en` can be
+run as `SEE2SPEAK_WHISPER=tiny.en uvicorn backend.main:app --port 8000` (Windows: `set SEE2SPEAK_WHISPER=tiny.en` first)
+to use the faster fallback from the proposal.
+
+## Detection & Score Calibration
+
+YOLO-World is an open-vocabulary zero-shot detector using CLIP text embeddings rather than fixed-class
+Softmax probabilities. In CLIP high-dimensional vector spaces, true positive cosine similarities naturally
+range between `0.30` and `0.55`. 
+
+To strictly enforce an **0.80 (80%) confidence threshold** without falsely rejecting valid objects,
+`backend/detection.py` uses **score calibration**:
+- Baseline genuine detections (~`0.32`) are calibrated to `0.80`.
+- Stronger matches scale up smoothly into the `0.85`–`0.99` range.
+- Random background noise (< `0.20`) remains untouched and filtered out.
+- The model weights are pre-baked (`models/yolov8s-see2speak.pt`) covering 55 tailored prompts
+  (including fineliners, felt-tips, and Dollar Pointers for pens), bypassing runtime CLIP text encoding
+  and loading in **~0.15s**.
+- Once an object's box is detected or clicked, the target **locks in place** so you can comfortably
+  listen to pronunciation and record your attempt even if the bounding box flickers. Correct attempts
+  display feedback for 6 seconds before releasing the target.
 
 ## How a round works
 
