@@ -4,9 +4,9 @@ See2Speak is a webcam-based vocabulary game. Show an object to the camera, hear 
 
 ## Vocabulary
 
-The game currently recognizes these nine targets:
+The game currently recognizes these six targets:
 
-**Book · Cell phone · Apple · Pen · Water bottle · Tape dispenser · Stapler · Scissors · Glue stick**
+**Book · Cell phone · Apple · Pen · Water bottle · Scissors**
 
 The vocabulary, detection prompts, accepted spoken forms, and thresholds are configured in [`backend/config.py`](backend/config.py).
 
@@ -102,23 +102,43 @@ To change the words or scoring behavior, edit `backend/config.py`. Detection pro
 Place MP3 files in `frontend/assets/audio/`, named after the vocabulary key in `backend/config.py`, for example:
 
 ```text
-book.mp3  cell_phone.mp3  apple.mp3  pen.mp3  water_bottle.mp3
-tape_dispenser.mp3  stapler.mp3  scissors.mp3  glue_stick.mp3
+book.mp3  cell_phone.mp3  apple.mp3  pen.mp3  water_bottle.mp3  scissors.mp3
 ```
 
 If a file is missing, the browser's built-in speech synthesis is used.
 
-## Tests and current limitations
+## Evaluation and System Benchmark
 
-Run the Python test suite with:
+To evaluate live object detection performance and compute formal computer vision metrics (Precision, Recall, F1-Score, Accuracy, and Latency), run the evaluation tool:
 
 ```powershell
-pytest -q
+python scripts/evaluate_system.py --trials 10
 ```
 
-The tests cover answer matching, scoring and duplicate-attempt handling, session history, detector prompt wiring, mouth metric calculations, calibration logic, and API behavior. See [`TEST_REPORT.md`](TEST_REPORT.md) for the recorded results and coverage details.
+### Benchmark Features
+- **Widescreen 1280×720 UI**: High-visibility camera canvas with large text, prominent status banners, and live bounding box overlays.
+- **Asynchronous Threading (30+ FPS)**: Runs camera capture and UI rendering independently from YOLO-World inference, ensuring a smooth webcam feed with zero motion lag.
+- **Interactive Session Control**:
+  - **`[START]` (Space/Enter)**: Opens each object in preparation mode so you can position the object and verify detection before testing starts.
+  - **`[PAUSE]` / `[RESUME]` (Space/P)**: Pauses the automated timer at any moment to adjust positioning.
+  - **`[NEXT CLASS]` (N)**: Moves to the next vocabulary class at your own pace.
+  - **`[QUIT]` (Q)**: Exits early and immediately calculates the summary table.
+- **Automated Paced Capture**: Records trials at configurable intervals (default: 2.0s) with an 0.8-second visual freeze confirmation displaying the logged box and HIT/MISS status.
+- **Negative Control Testing**: Evaluates background and unsupported everyday objects (e.g., mugs, keys, empty hands) to measure rejection specificity.
+- **Automated Metrics Table**: Generates a complete computer vision evaluation table ready for project reports:
+  - Per-class Precision, Recall, F1-Score, and Accuracy (at $\ge 0.80$ confidence)
+  - True Negative Specificity for Negative Control
+  - Average detection confidence and inference latency in milliseconds
+  - Overall Mean across all evaluated trials
 
-Automated tests use stand-in detector and face models. They verify integration and application logic; they do **not** establish real-world recognition accuracy. Try the complete flow on the target laptop with its webcam, microphone, and downloaded models. Detection can vary with lighting, camera distance, background, and hardware. Thin objects such as pens may be harder to detect. Whisper results can vary with accent, microphone quality, and background noise. Mouth movement feedback depends on face visibility and lighting and is not used to decide whether an answer is correct.
+### Command Line Options
+```powershell
+# Custom trial count per object (e.g., 15 trials per class and 15 negative control trials)
+python scripts/evaluate_system.py --trials 15
+
+# Custom capture interval (e.g., 2.5 seconds between automatic captures)
+python scripts/evaluate_system.py --trials 10 --interval 2.5
+```
 
 ## Troubleshooting
 

@@ -43,9 +43,10 @@ class VocabWord:
 VOCABULARY: tuple[VocabWord, ...] = (
     VocabWord("book", "Book", "book", ("book",),
               extra_prompts=("hardcover book", "paperback book", "reading book", "closed book")),
-    VocabWord("cell_phone", "Cell phone", "cell phone",
+    VocabWord("cell_phone", "Cell phone", "smartphone with glass screen",
               ("cell phone", "cellphone", "phone", "mobile phone", "mobile"),
-              extra_prompts=("smartphone", "mobile phone", "handheld smartphone")),
+              min_conf=0.88,
+              extra_prompts=("touchscreen smartphone", "black glass smartphone", "illuminated phone display")),
     VocabWord("apple", "Apple", "apple", ("apple",),
               extra_prompts=("red apple", "green apple", "fresh apple")),
     VocabWord("pen", "Pen", "pen", ("pen",),
@@ -59,15 +60,13 @@ VOCABULARY: tuple[VocabWord, ...] = (
     VocabWord("water_bottle", "Water bottle", "water bottle",
               ("water bottle", "bottle", "flask", "water flask"),
               extra_prompts=("plastic water bottle", "reusable water bottle", "insulated metal flask", "drinking bottle")),
-    VocabWord("tape_dispenser", "Tape dispenser", "tape dispenser",
-              ("tape dispenser", "tape", "dispenser"),
-              extra_prompts=("desktop tape dispenser", "clear tape dispenser", "plastic tape dispenser", "scotch tape dispenser")),
-    VocabWord("stapler", "Stapler", "stapler", ("stapler",),
-              extra_prompts=("desktop stapler", "metal stapler", "paper stapler", "handheld stapler")),
     VocabWord("scissors", "Scissors", "scissors", ("scissors", "scissor"),
-              extra_prompts=("pair of scissors", "desk scissors", "craft scissors")),
-    VocabWord("glue_stick", "Glue stick", "glue stick", ("glue stick", "glue"),
-              extra_prompts=("white glue stick", "glue stick tube", "stationery glue stick", "cylinder glue stick")),
+              extra_prompts=(
+                  "pair of scissors", "desk scissors", "craft scissors",
+                  "closed scissors", "pair of closed scissors", "cutting scissors",
+                  "office scissors", "stationery scissors", "scissors with plastic handles",
+                  "holding scissors"
+              )),
 )
 VOCAB_BY_KEY = {w.key: w for w in VOCABULARY}
 

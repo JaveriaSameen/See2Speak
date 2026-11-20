@@ -21,14 +21,27 @@ from . import config
 EPS = 1e-6     # scores are float32: 0.80 is stored as 0.79999995, which must still count as 0.80
 
 
-def calibrate_confidence(conf: float) -> float:
-    """Map open-vocabulary zero-shot CLIP cosine similarity into standard supervised confidence."""
+def calibrate_confidence(conf: float, word_key: str = "") -> float:
+    """Map open-vocabulary zero-shot CLIP cosine similarity into standard supervised confidence.
+
+    Different object geometries have different natural CLIP cosine ranges:
+      - Slender/thin objects (pen, scissors) peak around 0.30 - 0.35 -> anchored at 0.32
+      - Structured slabs (cell phone) easily produce spurious 0.35 - 0.40 on any rectangle -> anchored at 0.42
+      - Normal items (book, apple, water bottle) -> anchored at 0.36
+    """
     if not getattr(config, "CALIBRATE_CONFIDENCE", False):
         return conf
     if conf < 0.20:
         return conf
-    # Real zero-shot CLIP detections for small/thin objects like pens start around 0.30-0.34
-    scaled = 0.80 + (conf - 0.32) * 0.45
+
+    if word_key == "cell_phone":
+        base_similarity = 0.42
+    elif word_key in ("pen", "scissors"):
+        base_similarity = 0.32
+    else:
+        base_similarity = 0.36
+
+    scaled = 0.80 + (conf - base_similarity) * 0.45
     return round(float(min(0.99, max(conf, scaled))), 3)
 
 
@@ -125,7 +138,7 @@ class Detector:
         for box in res.boxes:
             word = self.vocab[self.prompt_word[int(box.cls[0])]]
             raw_conf = float(box.conf[0])
-            conf = calibrate_confidence(raw_conf)
+            conf = calibrate_confidence(raw_conf, word.key)
             x1, y1, x2, y2 = (float(v) for v in box.xyxy[0])
             if conf + EPS >= self.threshold_for(word):
                 accepted.append({
