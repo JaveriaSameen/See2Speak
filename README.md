@@ -124,6 +124,7 @@ python scripts/evaluate_system.py --trials 10
   - **`[NEXT CLASS]` (N)**: Moves to the next vocabulary class at your own pace.
   - **`[QUIT]` (Q)**: Exits early and immediately calculates the summary table.
 - **Automated Paced Capture**: Records trials at configurable intervals (default: 2.0s) with an 0.8-second visual freeze confirmation displaying the logged box and HIT/MISS status.
+- **Automated Report Screenshots**: Automatically saves high-resolution, annotated bounding-box images of your best detections into `docs/screenshots/` (e.g. `detection_book.png`, `detection_apple.png`, `detection_negative_control.png`). You can also press **`[S]`** or click **`[SNAPSHOT]`** anytime to capture an instant image.
 - **Negative Control Testing**: Evaluates background and unsupported everyday objects (e.g., mugs, keys, empty hands) to measure rejection specificity.
 - **Automated Metrics Table**: Generates a complete computer vision evaluation table ready for project reports:
   - Per-class Precision, Recall, F1-Score, and Accuracy (at $\ge 0.80$ confidence)
@@ -139,6 +140,35 @@ python scripts/evaluate_system.py --trials 15
 # Custom capture interval (e.g., 2.5 seconds between automatic captures)
 python scripts/evaluate_system.py --trials 10 --interval 2.5
 ```
+
+### Speech Recognition Benchmark
+
+To evaluate Whisper `base.en` speech transcription and the game's answer matching logic across the 5 evaluation categories (Exact Match, Alias Match, Near Match, Wrong Word, Silence/Noise) in a dedicated **1280×720 graphical window**, run:
+
+```powershell
+python scripts/evaluate_speech.py --trials 10
+```
+
+- **Graphical Guidance Window (1280×720)**: Displays target words, instructions on what to say, and the expected system decision on a sleek presentation canvas.
+- **Interactive UI Buttons**: Click **`[RECORD / NEXT]`** (Space), **`[RETRY]`** (R), **`[SNAPSHOT]`** (S), **`[NEXT CAT]`** (N), and **`[QUIT]`** (Q).
+- **Automated Category Screenshots**: Automatically saves high-resolution verification screenshots to `docs/screenshots/` (e.g. `speech_exact_match.png`, `speech_alias_match.png`) for direct insertion into your report.
+- **Metrics Table**: Outputs the complete empirical decision match table matching **Table 2** of the project report.
+
+### Facial Landmark & Mouth Movement Benchmark
+
+To evaluate MediaPipe Face Landmarker, neutral-mouth baseline calibration, movement sensitivity ($\Delta \ge 0.05$), and bilabial lip closure ('B' and 'P') in a **1280×720 split-screen interactive window**, run:
+
+```powershell
+python scripts/evaluate_face.py
+```
+
+- **Interactive Split-Screen Window (1280×720)**: Shows your live camera feed overlaid with the real-time **cyan/magenta lip mesh** and **yellow eye tracking line** alongside numerical metrics and gauge bars.
+- **Three Progressive Evaluation Phases**:
+  1. *Neutral-Mouth Calibration*: Verifies baseline convergence across 20 stable frames.
+  2. *Movement Detection Sensitivity*: Tests speech movement vs. resting mouth controls.
+  3. *Bilabial Lip Closure*: Tests initial pre-phonation closure for 'B' & 'P' vocabulary words.
+- **Automated Screenshots**: Saves high-resolution verification images into `docs/screenshots/` (`face_calibration_mesh.png`, `face_speech_movement.png`, `face_bilabial_closure.png`).
+- **Metrics Table**: Outputs the empirical evaluation table matching **Table 3** of the project report.
 
 ## Troubleshooting
 
