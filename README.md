@@ -170,6 +170,32 @@ python scripts/evaluate_face.py
 - **Automated Screenshots**: Saves high-resolution verification images into `docs/screenshots/` (`face_calibration_mesh.png`, `face_speech_movement.png`, `face_bilabial_closure.png`).
 - **Metrics Table**: Outputs the empirical evaluation table matching **Table 3** of the project report.
 
+### Target Locking & Detection Stability Benchmark (Section 3.2.6)
+
+To empirically evaluate target locking speed and stability across the 6 vocabulary objects in a dedicated **1280×720 interactive window**, run:
+
+```powershell
+python scripts/evaluate_locking.py --trials 10
+```
+
+- **Replicates Browser Tracking Logic**: Implements the identical 2-sighting criterion (`LOCK_HITS = 2`) and 500 ms grace period (`BOX_GRACE_MS = 500`) from `frontend/script.js`.
+- **Automatic Stopwatch**: Automatically triggers when the object is first detected in the frame and records the exact time taken to achieve stable target lock.
+- **Goal Verification (<= 3.00s)**: Verifies whether target lock occurs within the proposal's 3-second design goal.
+- **Metrics Table**: Automatically calculates Mean time to lock, Min, Max, and % Within 3.0s across all 10 trials per class.
+
+### Whisper Vocabulary-Hint Ablation Benchmark (Section 3.3.2)
+
+To evaluate the impact of the `initial_prompt` vocabulary hint on Whisper speech recognition in a dedicated **1280×720 graphical window**, run:
+
+```powershell
+python scripts/evaluate_whisper_hint.py --speaker S1 --reps 2
+```
+
+- **Interactive 1280×720 GUI**: Shows prompt cards (word to say, category, expected outcome) with an animated red audio recording meter.
+- **Automated Double-Transcription**: Transcribes each audio clip twice with identical deterministic settings—once with `Hint ON` and once with `Hint OFF`.
+- **Automatic Screenshot**: Saves a high-resolution screenshot of the final comparison table to `docs/screenshots/whisper_hint_ablation.png`.
+- **Metrics Table**: Outputs the exact filled table and summary paragraph for Section 3.3.2 of the project report.
+
 ## Troubleshooting
 
 | Issue | Try this |
