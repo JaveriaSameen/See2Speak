@@ -122,7 +122,7 @@ def run_face_benchmark():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     # State variables
-    calib_tracker = CalibrationTracker(needed=20)
+    calib_tracker = CalibrationTracker(needed=config.MOUTH_CALIB_FRAMES)
     baseline: MouthSample | None = None
     calib_time_sec = 0.0
     calib_start_time = None
@@ -351,10 +351,10 @@ def run_face_benchmark():
         else:
             cv2.putText(
                 canvas,
-                "CALIBRATING: Keep mouth gently closed and facing camera...",
+                f"CALIBRATING ({len(calib_tracker.samples)} / {calib_tracker.needed} samples): Keep mouth relaxed...",
                 (h_x1 + 25, h_y1 + 92),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.52,
+                0.50,
                 (0, 215, 255),
                 1,
             )
