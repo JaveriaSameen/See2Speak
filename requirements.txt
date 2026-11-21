@@ -7,5 +7,4 @@ opencv-python-headless
 ultralytics>=8.3             # YOLO-World v2 Small (yolov8s-worldv2.pt)
 openai-whisper               # Whisper base.en (runs locally; pulls in PyTorch)
 mediapipe                    # Face Landmarker (mouth movement)
-pytest                       # tests only
-sounddevice                  # microphone recording for scripts/evaluate_speech.py
+sounddevice                  # microphone recording in the speech benchmark scripts only
