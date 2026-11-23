@@ -197,7 +197,7 @@ def run_locking_benchmark(trials_per_class: int = 10):
     detector.load()
     print(f"[ok] Detector ready in {time.perf_counter() - t0:.2f}s\n")
 
-    cap = cv2.VideoCapture(1)
+    cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("[!] Error: Could not open camera (index 0).")
         return
@@ -280,10 +280,7 @@ def run_locking_benchmark(trials_per_class: int = 10):
                 break
 
         # Expire the previous hit before considering any new result.
-        if (
-            trial_state == "TRACKING"
-            and now - last_sight_time > BOX_GRACE_MS / 1000.0
-        ):
+        if trial_state == "TRACKING" and now - last_sight_time > BOX_GRACE_MS / 1000.0:
             hit_count = 0
             trial_state = "SEARCHING"
 
@@ -303,9 +300,7 @@ def run_locking_benchmark(trials_per_class: int = 10):
                     if target_key not in saved_screenshots:
                         shot_path = SCREENSHOTS_DIR / f"locking_{target_key}.png"
                         cv2.imwrite(str(shot_path), frame)
-                        saved_screenshots[target_key] = str(
-                            shot_path.relative_to(ROOT)
-                        )
+                        saved_screenshots[target_key] = str(shot_path.relative_to(ROOT))
                 else:
                     trial_state = "TRACKING"
 
