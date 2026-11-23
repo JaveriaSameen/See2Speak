@@ -130,7 +130,10 @@
   <aside class="side">
     <section class="card practice" aria-labelledby="hPractice">
       <h2 id="hPractice" class="sr-only">Word practice</h2>
-      <div class="eyebrow">Say this word</div>
+      <div class="target-header">
+        <span class="eyebrow">Say this word</span>
+        <button id="btnChangeTarget" class="btn-change-target" title="Clear this word and choose another object" hidden aria-label="Change target object">🔄 Change</button>
+      </div>
       <div id="targetWord" class="target-word" aria-live="polite">—</div>
       <p id="targetHelp" class="muted">Hold up a supported object to begin.</p>
 

@@ -54,16 +54,33 @@ def iou(a: dict, b: dict) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def merge_same_word(dets: list[dict], thr: float = None) -> list[dict]:
-    """Several prompts can fire on one object (e.g. 'water bottle' and 'insulated metal flask').
-    Keep the highest-confidence box when two boxes of the SAME word overlap. Scores are untouched."""
+def merge_same_word(dets: list[dict], thr: float = None, cross_thr: float = None) -> list[dict]:
+    """
+    1. Same-word merge: several prompts can fire on one object (e.g. 'water bottle' and 'insulated metal flask').
+       Keep the highest-confidence box when two boxes of the SAME word overlap (IoU >= thr).
+    2. Cross-class NMS: if two DIFFERENT words heavily overlap on the exact same physical region
+       (IoU >= cross_thr, default 0.60), keep the higher-confidence class and suppress the weaker competing box.
+       This prevents two conflicting bounding boxes from stacking on top of one object.
+    """
     thr = config.MERGE_IOU if thr is None else thr
+    cross_thr = getattr(config, "CROSS_MERGE_IOU", 0.60) if cross_thr is None else cross_thr
     kept: list[dict] = []
     for d in sorted(dets, key=lambda x: x["confidence"], reverse=True):
-        if any(k["key"] == d["key"] and iou(k["box"], d["box"]) >= thr for k in kept):
-            continue
-        kept.append(d)
+        conflict = False
+        for k in kept:
+            overlap = iou(k["box"], d["box"])
+            if k["key"] == d["key"] and overlap >= thr:
+                conflict = True
+                break
+            elif k["key"] != d["key"] and overlap >= cross_thr:
+                conflict = True
+                break
+        if not conflict:
+            kept.append(d)
     return kept
+
+
+merge_and_suppress_boxes = merge_same_word
 
 
 class Detector:

@@ -93,6 +93,7 @@ DETECT_MAX_BOXES = 6
 DETECT_MAX_DET = 20
 DETECT_CANDIDATE_FLOOR = 0.25      # lower scores are ignored even for the "best rejected" hint
 MERGE_IOU = 0.5                    # same-word boxes (from different prompts) overlapping this much are merged
+CROSS_MERGE_IOU = 0.60              # different-word boxes overlapping this much are suppressed (higher conf wins)
 
 # ---- Mouth movement check ---------------------------------------------------
 # All distances are normalised by the inter-ocular distance so they do not

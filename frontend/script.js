@@ -22,7 +22,7 @@ const els = {
   slime: $("slimeWrap"), bubble: $("bubble"), banner: $("banner"),
   btnStart: $("btnStart"), btnRecal: $("btnRecal"), btnFinish: $("btnFinish"),
   btnRestart: $("btnRestart"), btnStop: $("btnStop"),
-  btnListen: $("btnListen"), btnRecord: $("btnRecord"),
+  btnListen: $("btnListen"), btnRecord: $("btnRecord"), btnChangeTarget: $("btnChangeTarget"),
   targetWord: $("targetWord"), targetHelp: $("targetHelp"), recStatus: $("recStatus"),
   resultBox: $("resultBox"), rTarget: $("rTarget"), rAnswer: $("rAnswer"), rResult: $("rResult"),
   rPoints: $("rPoints"), mouthMsg: $("mouthMsg"),
@@ -388,6 +388,7 @@ function pruneTracks() {
 }
 setInterval(pruneTracks, PRUNE_EVERY_MS);
 const isStable = (t) => t && t.hits >= LOCK_HITS;
+let unlockCooldownKey = null, unlockCooldownUntil = 0;
 
 function chooseTarget() {
   // If the user manually selected an object, or we are in "ready" practising a target,
@@ -402,6 +403,7 @@ function chooseTarget() {
   }
   let best = null;
   for (const [k, t] of S.tracks) {
+    if (k === unlockCooldownKey && performance.now() < unlockCooldownUntil) continue;
     if (isStable(t) && !t.missed && (!best || t.det.confidence > best.det.confidence)) best = t;
   }
   const next = best ? best.det.key : null;
@@ -412,6 +414,7 @@ function setTarget(key) {
   S.target = key;
   resetResult();
   if (key) {
+    els.btnChangeTarget.hidden = false;
     const label = S.labels[key];
     S.phase = "ready";
     els.targetWord.textContent = label;
@@ -421,6 +424,7 @@ function setTarget(key) {
     setTimeout(() => S.target === key && setBubble(bubbleDefault()), 2100);
     parkNextToTarget();
   } else {
+    els.btnChangeTarget.hidden = true;
     S.phase = S.phase === "ready" ? "scanning" : S.phase;
     els.targetWord.textContent = "—";
     els.targetHelp.textContent = "Hold up a supported object to begin.";
@@ -442,6 +446,8 @@ function renderBoxes() {
       el.title = "Click to practise this object";
       el.addEventListener("click", () => {
         if (S.phase === "ready" || S.phase === "scanning") {
+          unlockCooldownKey = null;
+          unlockCooldownUntil = 0;
           S.manualKey = key;
           setTarget(key);
         }
@@ -716,6 +722,7 @@ async function stopAll(summary) {
   const st = await endSession();
   releaseDevices();
   S.tracks.clear(); S.target = null; els.boxLayer.innerHTML = "";
+  els.btnChangeTarget.hidden = true;
   els.targetWord.textContent = "—"; unparkSlime(); setBubble(bubbleDefault());
   els.micText.textContent = "Camera off"; setStatus("Camera and microphone released.");
   updateButtons();
@@ -759,6 +766,16 @@ els.btnFinish.onclick = () => stopAll(true);
 els.btnRestart.onclick = restartGame;
 els.btnRecal.onclick = () => { if (S.sessionId && (S.phase === "scanning" || S.phase === "ready")) runCalibration(); };
 els.btnListen.onclick = playReference;
+els.btnChangeTarget.onclick = () => {
+  if (S.target) {
+    unlockCooldownKey = S.target;
+    unlockCooldownUntil = performance.now() + 2500;
+  }
+  S.manualKey = null;
+  S.tracks.clear();
+  setTarget(null);
+  els.boxLayer.querySelectorAll(".box").forEach((el) => el.remove());
+};
 els.btnRecord.onclick = () => (S.phase === "recording" ? stopRecording() : startRecording());
 $("sumAgain").addEventListener("click", () => setTimeout(restartGame, 0));
 window.addEventListener("beforeunload", releaseDevices);
