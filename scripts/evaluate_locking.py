@@ -2,13 +2,13 @@
 
 Directly benchmarks Section 3.2.6 of the project report:
   - Replicates frontend/script.js target locking logic (LOCK_HITS = 2, BOX_GRACE_MS = 500).
-  - Automatically measures the exact time (in seconds) from the first appearance
-    of an object to target lock.
+  - Measures the elapsed time from pressing Start Trial to target lock.
   - Verifies whether target lock occurs within the 3.0-second proposal goal.
   - Automatically computes Mean, Min, Max, and % Within 3.0s across 10 trials per class.
   - Verifies 0.0 unintended target changes per minute via sticky-target policy.
   - Automatically saves verification screenshots to docs/screenshots/locking_<class>.png.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -64,14 +64,21 @@ class AsyncInferenceWorker:
 
     def get_detections(self) -> tuple[list[dict], float, int]:
         with self._lock:
-            return list(self._current_dets), self._inference_time_ms, self._last_processed_seq
+            return (
+                list(self._current_dets),
+                self._inference_time_ms,
+                self._last_processed_seq,
+            )
 
     def _worker_loop(self):
         while self._running:
             frame_to_process = None
             seq = 0
             with self._lock:
-                if self._latest_frame is not None and self._frame_seq != self._last_processed_seq:
+                if (
+                    self._latest_frame is not None
+                    and self._frame_seq != self._last_processed_seq
+                ):
                     frame_to_process = self._latest_frame.copy()
                     seq = self._frame_seq
 
@@ -79,7 +86,9 @@ class AsyncInferenceWorker:
                 time.sleep(0.01)
                 continue
 
-            ok_enc, enc_bytes = cv2.imencode(".jpg", frame_to_process, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            ok_enc, enc_bytes = cv2.imencode(
+                ".jpg", frame_to_process, [cv2.IMWRITE_JPEG_QUALITY, 70]
+            )
             if ok_enc:
                 t0 = time.perf_counter()
                 res = self.detector.detect(enc_bytes.tobytes())
@@ -98,7 +107,13 @@ class AsyncInferenceWorker:
 class GuiButton:
     """Clickable and renderable on-screen button."""
 
-    def __init__(self, key_id: str, rect: tuple[int, int, int, int], text: str, bg_color: tuple[int, int, int]):
+    def __init__(
+        self,
+        key_id: str,
+        rect: tuple[int, int, int, int],
+        text: str,
+        bg_color: tuple[int, int, int],
+    ):
         self.key_id = key_id
         self.rect = rect
         self.text = text
@@ -116,10 +131,20 @@ class GuiButton:
 
         font_scale = 0.60
         thickness = 2
-        (tw, th), _ = cv2.getTextSize(self.text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+        (tw, th), _ = cv2.getTextSize(
+            self.text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
+        )
         tx = x1 + (x2 - x1 - tw) // 2
         ty = y1 + (y2 - y1 + th) // 2
-        cv2.putText(img, self.text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+        cv2.putText(
+            img,
+            self.text,
+            (tx, ty),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+        )
 
 
 def draw_bounding_boxes(frame, detections, target_key: str):
@@ -131,14 +156,16 @@ def draw_bounding_boxes(frame, detections, target_key: str):
         x2 = int((b["x"] + b["w"]) * w)
         y2 = int((b["y"] + b["h"]) * h)
 
-        is_match = (box_info["key"] == target_key)
+        is_match = box_info["key"] == target_key
         color = (0, 255, 0) if is_match else (0, 140, 255)
         tag = f"{box_info['label']} {int(box_info['confidence'] * 100)}%"
 
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
         font_scale = 0.65
         thickness = 2
-        (tw, th), _ = cv2.getTextSize(tag, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+        (tw, th), _ = cv2.getTextSize(
+            tag, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
+        )
         cv2.rectangle(frame, (x1, max(0, y1 - th - 10)), (x1 + tw + 10, y1), color, -1)
         cv2.putText(
             frame,
@@ -155,7 +182,9 @@ def run_locking_benchmark(trials_per_class: int = 10):
     window_name = "See2Speak Target Locking Benchmark"
     SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    print_banner("See2Speak Target Locking & Detection Stability Benchmark (Section 3.2.6)")
+    print_banner(
+        "See2Speak Target Locking & Detection Stability Benchmark (Section 3.2.6)"
+    )
     print(f"Target Vocabulary (6 classes): {[w.label for w in config.VOCABULARY]}")
     print(f"Trials per object: {trials_per_class}")
     print("Locking Criterion: LOCK_HITS = 2 (2 sightings before target lock)")
@@ -199,12 +228,12 @@ def run_locking_benchmark(trials_per_class: int = 10):
     trial_idx = 0
 
     # Trial state machine
-    # "READY_PROMPT": Waiting for user to present object or press Space
-    # "SEARCHING": Watching for 1st sighting
-    # "TRACKING": 1st sighting registered, timer running, watching for 2nd sighting
+    # "READY_PROMPT": Waiting for Start Trial
+    # "SEARCHING": Timer running, watching for 1st sighting
+    # "TRACKING": Timer running, watching for 2nd sighting within the grace period
     # "LOCKED_PAUSE": Target locked! Displaying outcome for 1.8s
     trial_state = "READY_PROMPT"
-    first_sight_time = 0.0
+    trial_start_time = 0.0
     last_sight_time = 0.0
     hit_count = 0
     lock_time_sec = 0.0
@@ -226,6 +255,9 @@ def run_locking_benchmark(trials_per_class: int = 10):
         if not ret:
             break
 
+        worker.update_frame(frame)
+        current_dets, inference_ms, frame_seq = worker.get_detections()
+
         now = time.perf_counter()
         fps = 1.0 / max(1e-4, now - last_frame_time)
         last_frame_time = now
@@ -233,9 +265,6 @@ def run_locking_benchmark(trials_per_class: int = 10):
         if len(fps_history) > 30:
             fps_history.pop(0)
         mean_fps = sum(fps_history) / len(fps_history)
-
-        worker.update_frame(frame)
-        current_dets, inference_ms, frame_seq = worker.get_detections()
 
         cur_word = classes[class_idx]
         target_key = cur_word.key
@@ -250,45 +279,30 @@ def run_locking_benchmark(trials_per_class: int = 10):
                 target_conf = d["confidence"]
                 break
 
-        # State machine logic
-        new_frame_arrived = (frame_seq != last_processed_seq)
-        if new_frame_arrived:
+        # Expire the previous hit before considering any new result.
+        if trial_state == "TRACKING" and now - last_sight_time > BOX_GRACE_MS / 1000.0:
+            hit_count = 0
+            trial_state = "SEARCHING"
+
+        if frame_seq != last_processed_seq:
             last_processed_seq = frame_seq
 
-            if trial_state == "SEARCHING":
-                if is_detected_in_frame:
-                    hit_count = 1
-                    first_sight_time = now
-                    last_sight_time = now
-                    trial_state = "TRACKING"
+            if trial_state in ("SEARCHING", "TRACKING") and is_detected_in_frame:
+                hit_count += 1
+                last_sight_time = now
+                if hit_count >= LOCK_HITS:
+                    lock_time_sec = now - trial_start_time
+                    trial_state = "LOCKED_PAUSE"
+                    lock_end_pause_time = now + 1.8
+                    results_by_class[target_key].append(lock_time_sec)
 
-            elif trial_state == "TRACKING":
-                if is_detected_in_frame:
-                    hit_count += 1
-                    last_sight_time = now
-                    if hit_count >= 2:  # LOCK_HITS = 2
-                        lock_time_sec = now - first_sight_time
-                        trial_state = "LOCKED_PAUSE"
-                        lock_end_pause_time = now + 1.8
-                        results_by_class[target_key].append(lock_time_sec)
-
-                        # Capture best screenshot
-                        if target_key not in saved_screenshots:
-                            shot_path = SCREENSHOTS_DIR / f"locking_{target_key}.png"
-                            cv2.imwrite(str(shot_path), frame)
-                            saved_screenshots[target_key] = str(shot_path.relative_to(ROOT))
+                    # Capture best screenshot
+                    if target_key not in saved_screenshots:
+                        shot_path = SCREENSHOTS_DIR / f"locking_{target_key}.png"
+                        cv2.imwrite(str(shot_path), frame)
+                        saved_screenshots[target_key] = str(shot_path.relative_to(ROOT))
                 else:
-                    # Grace period check (500 ms)
-                    if now - last_sight_time > (BOX_GRACE_MS / 1000.0):
-                        # Grace period expired: reset hit count
-                        hit_count = 0
-                        trial_state = "SEARCHING"
-
-        elif trial_state == "TRACKING":
-            # Grace period timeout even if no new inference arrived
-            if now - last_sight_time > (BOX_GRACE_MS / 1000.0):
-                hit_count = 0
-                trial_state = "SEARCHING"
+                    trial_state = "TRACKING"
 
         # Check if pause after lock has finished
         if trial_state == "LOCKED_PAUSE" and now >= lock_end_pause_time:
@@ -355,51 +369,166 @@ def run_locking_benchmark(trials_per_class: int = 10):
         cv2.rectangle(canvas, (h_x1, h_y1), (h_x2, h_y2), (70, 85, 105), 2)
 
         # Target card
-        cv2.putText(canvas, "TARGET OBJECT", (h_x1 + 25, h_y1 + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 215, 255), 2)
-        cv2.putText(canvas, target_label.upper(), (h_x1 + 25, h_y1 + 75), cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 255), 3)
+        cv2.putText(
+            canvas,
+            "TARGET OBJECT",
+            (h_x1 + 25, h_y1 + 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 215, 255),
+            2,
+        )
+        cv2.putText(
+            canvas,
+            target_label.upper(),
+            (h_x1 + 25, h_y1 + 75),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.1,
+            (255, 255, 255),
+            3,
+        )
 
         # Divider
-        cv2.line(canvas, (h_x1 + 20, h_y1 + 95), (h_x2 - 20, h_y1 + 95), (60, 75, 95), 1)
+        cv2.line(
+            canvas, (h_x1 + 20, h_y1 + 95), (h_x2 - 20, h_y1 + 95), (60, 75, 95), 1
+        )
 
         # Status & Stopwatch Card
-        cv2.putText(canvas, "LOCKING STATUS & TIMER", (h_x1 + 25, h_y1 + 125), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 215, 255), 2)
+        cv2.putText(
+            canvas,
+            "LOCKING STATUS & TIMER",
+            (h_x1 + 25, h_y1 + 125),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 215, 255),
+            2,
+        )
 
         timer_box_y1 = h_y1 + 140
         timer_box_y2 = timer_box_y1 + 120
-        cv2.rectangle(canvas, (h_x1 + 25, timer_box_y1), (h_x2 - 25, timer_box_y2), (20, 24, 32), -1)
-        cv2.rectangle(canvas, (h_x1 + 25, timer_box_y1), (h_x2 - 25, timer_box_y2), (60, 75, 100), 2)
+        cv2.rectangle(
+            canvas,
+            (h_x1 + 25, timer_box_y1),
+            (h_x2 - 25, timer_box_y2),
+            (20, 24, 32),
+            -1,
+        )
+        cv2.rectangle(
+            canvas,
+            (h_x1 + 25, timer_box_y1),
+            (h_x2 - 25, timer_box_y2),
+            (60, 75, 100),
+            2,
+        )
 
         if trial_state == "READY_PROMPT":
-            cv2.putText(canvas, "READY FOR TRIAL", (h_x1 + 45, timer_box_y1 + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.82, (0, 215, 120), 2)
-            cv2.putText(canvas, f"Hold up '{target_label}' to camera", (h_x1 + 45, timer_box_y1 + 75), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 1)
-            cv2.putText(canvas, "Click [START TRIAL] or press [SPACE]", (h_x1 + 45, timer_box_y1 + 102), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
+            cv2.putText(
+                canvas,
+                "READY FOR TRIAL",
+                (h_x1 + 45, timer_box_y1 + 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.82,
+                (0, 215, 120),
+                2,
+            )
+            cv2.putText(
+                canvas,
+                f"Hold up '{target_label}' to camera",
+                (h_x1 + 45, timer_box_y1 + 75),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.62,
+                (255, 255, 255),
+                1,
+            )
+            cv2.putText(
+                canvas,
+                "Click [START TRIAL] or press [SPACE]",
+                (h_x1 + 45, timer_box_y1 + 102),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (180, 180, 180),
+                1,
+            )
 
-        elif trial_state == "SEARCHING":
-            pulse = (np.sin(now * 8) + 1.0) / 2.0
-            p_col = (0, int(150 + 105 * pulse), 255)
-            cv2.putText(canvas, "WAITING FOR 1ST SIGHTING...", (h_x1 + 45, timer_box_y1 + 45), cv2.FONT_HERSHEY_SIMPLEX, 0.68, p_col, 2)
-            cv2.putText(canvas, "Stopwatch starts on 1st detection", (h_x1 + 45, timer_box_y1 + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (200, 200, 200), 1)
-            cv2.putText(canvas, "Hit count: 0 / 2", (h_x1 + 45, timer_box_y1 + 105), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (160, 160, 160), 1)
-
-        elif trial_state == "TRACKING":
-            elapsed = now - first_sight_time
+        elif trial_state in ("SEARCHING", "TRACKING"):
+            elapsed = now - trial_start_time
             el_col = (0, 255, 0) if elapsed <= 3.0 else (0, 0, 255)
-            cv2.putText(canvas, f"TIMER: {elapsed:.2f} s", (h_x1 + 45, timer_box_y1 + 50), cv2.FONT_HERSHEY_SIMPLEX, 1.15, el_col, 3)
-            cv2.putText(canvas, f"Hit count: 1 / 2 (Grace: {BOX_GRACE_MS}ms)", (h_x1 + 45, timer_box_y1 + 85), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 215, 255), 2)
-            cv2.putText(canvas, "Waiting for confirmation frame (Hit 2)...", (h_x1 + 45, timer_box_y1 + 108), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (200, 200, 200), 1)
+            cv2.putText(
+                canvas,
+                f"TIMER: {elapsed:.2f} s",
+                (h_x1 + 45, timer_box_y1 + 50),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.15,
+                el_col,
+                3,
+            )
+            cv2.putText(
+                canvas,
+                f"Hit count: {hit_count} / {LOCK_HITS} (Grace: {BOX_GRACE_MS}ms)",
+                (h_x1 + 45, timer_box_y1 + 85),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.62,
+                (0, 215, 255),
+                2,
+            )
+            cv2.putText(
+                canvas,
+                "Waiting for first detection..."
+                if trial_state == "SEARCHING"
+                else "Waiting for confirmation detection...",
+                (h_x1 + 45, timer_box_y1 + 108),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (200, 200, 200),
+                1,
+            )
 
         elif trial_state == "LOCKED_PAUSE":
-            is_within = (lock_time_sec <= 3.0)
+            is_within = lock_time_sec <= 3.0
             badge_col = (0, 255, 0) if is_within else (0, 140, 255)
-            cv2.putText(canvas, f"TARGET LOCKED! ({lock_time_sec:.2f}s)", (h_x1 + 45, timer_box_y1 + 48), cv2.FONT_HERSHEY_SIMPLEX, 0.88, badge_col, 3)
-            goal_str = "PASSED: Within 3.00s Goal ✅" if is_within else "Exceeded 3.00s Goal ⚠️"
-            cv2.putText(canvas, goal_str, (h_x1 + 45, timer_box_y1 + 85), cv2.FONT_HERSHEY_SIMPLEX, 0.65, badge_col, 2)
-            cv2.putText(canvas, "Advancing to next trial...", (h_x1 + 45, timer_box_y1 + 108), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (180, 180, 180), 1)
+            cv2.putText(
+                canvas,
+                f"TARGET LOCKED! ({lock_time_sec:.2f}s)",
+                (h_x1 + 45, timer_box_y1 + 48),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.88,
+                badge_col,
+                3,
+            )
+            goal_str = (
+                "PASSED: Within 3.00s Goal ✅" if is_within else "Exceeded 3.00s Goal ⚠️"
+            )
+            cv2.putText(
+                canvas,
+                goal_str,
+                (h_x1 + 45, timer_box_y1 + 85),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                badge_col,
+                2,
+            )
+            cv2.putText(
+                canvas,
+                "Advancing to next trial...",
+                (h_x1 + 45, timer_box_y1 + 108),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (180, 180, 180),
+                1,
+            )
 
         # Progress & Statistics Card
         stats_y = timer_box_y2 + 20
         cv2.line(canvas, (h_x1 + 20, stats_y), (h_x2 - 20, stats_y), (60, 75, 95), 1)
-        cv2.putText(canvas, "CLASS STATISTICS (SO FAR)", (h_x1 + 25, stats_y + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 215, 255), 2)
+        cv2.putText(
+            canvas,
+            "CLASS STATISTICS (SO FAR)",
+            (h_x1 + 25, stats_y + 28),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 215, 255),
+            2,
+        )
 
         cur_results = results_by_class[target_key]
         n_done = len(cur_results)
@@ -408,18 +537,84 @@ def run_locking_benchmark(trials_per_class: int = 10):
             min_t = min(cur_results)
             max_t = max(cur_results)
             pct_3s = sum(1 for t in cur_results if t <= 3.0) / n_done * 100.0
-            cv2.putText(canvas, f"Completed: {n_done} / {trials_per_class}", (h_x1 + 25, stats_y + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (255, 255, 255), 1)
-            cv2.putText(canvas, f"Mean Lock Time: {mean_t:.2f} s", (h_x1 + 25, stats_y + 90), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (0, 255, 0), 2)
-            cv2.putText(canvas, f"Min: {min_t:.2f} s  |  Max: {max_t:.2f} s", (h_x1 + 25, stats_y + 120), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (200, 200, 200), 1)
-            cv2.putText(canvas, f"Within 3.0s Goal: {pct_3s:.1f}%", (h_x1 + 25, stats_y + 150), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 215, 255), 2)
+            cv2.putText(
+                canvas,
+                f"Completed: {n_done} / {trials_per_class}",
+                (h_x1 + 25, stats_y + 60),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.60,
+                (255, 255, 255),
+                1,
+            )
+            cv2.putText(
+                canvas,
+                f"Mean Lock Time: {mean_t:.2f} s",
+                (h_x1 + 25, stats_y + 90),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.60,
+                (0, 255, 0),
+                2,
+            )
+            cv2.putText(
+                canvas,
+                f"Min: {min_t:.2f} s  |  Max: {max_t:.2f} s",
+                (h_x1 + 25, stats_y + 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.58,
+                (200, 200, 200),
+                1,
+            )
+            cv2.putText(
+                canvas,
+                f"Within 3.0s Goal: {pct_3s:.1f}%",
+                (h_x1 + 25, stats_y + 150),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.62,
+                (0, 215, 255),
+                2,
+            )
         else:
-            cv2.putText(canvas, "No completed trials yet.", (h_x1 + 25, stats_y + 65), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (160, 160, 160), 1)
-            cv2.putText(canvas, f"Inference Latency: {inference_ms:.1f} ms/frame", (h_x1 + 25, stats_y + 95), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
-            cv2.putText(canvas, "Target Locking: 2 Consecutive Hits", (h_x1 + 25, stats_y + 125), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
+            cv2.putText(
+                canvas,
+                "No completed trials yet.",
+                (h_x1 + 25, stats_y + 65),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.58,
+                (160, 160, 160),
+                1,
+            )
+            cv2.putText(
+                canvas,
+                f"Inference Latency: {inference_ms:.1f} ms/frame",
+                (h_x1 + 25, stats_y + 95),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (200, 200, 200),
+                1,
+            )
+            cv2.putText(
+                canvas,
+                f"Target Locking: {LOCK_HITS} Hits Within {BOX_GRACE_MS} ms",
+                (h_x1 + 25, stats_y + 125),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (200, 200, 200),
+                1,
+            )
 
         # Sticky target status badge
-        cv2.rectangle(canvas, (h_x1 + 25, h_y2 - 50), (h_x2 - 25, h_y2 - 15), (20, 24, 30), -1)
-        cv2.putText(canvas, "Sticky Target Policy: 0.0 Unintended Swaps/min", (h_x1 + 35, h_y2 - 27), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 120), 1)
+        cv2.rectangle(
+            canvas, (h_x1 + 25, h_y2 - 50), (h_x2 - 25, h_y2 - 15), (20, 24, 30), -1
+        )
+        cv2.putText(
+            canvas,
+            "Sticky Target Policy: 0.0 Unintended Swaps/min",
+            (h_x1 + 35, h_y2 - 27),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.50,
+            (0, 255, 120),
+            1,
+        )
 
         # Bottom 5 Buttons Dock (y: 630 to 690)
         btn_y1 = 630
@@ -436,26 +631,80 @@ def run_locking_benchmark(trials_per_class: int = 10):
         b5_x = b4_x + btn_w + gap
 
         if trial_state == "READY_PROMPT":
-            btn1 = GuiButton("START_TRIAL", (b1_x, btn_y1, b1_x + btn_w, btn_y2), "START TRIAL (Space)", (40, 160, 40))
+            btn1 = GuiButton(
+                "START_TRIAL",
+                (b1_x, btn_y1, b1_x + btn_w, btn_y2),
+                "START TRIAL (Space)",
+                (40, 160, 40),
+            )
         elif trial_state == "SEARCHING":
-            btn1 = GuiButton("START_TRIAL", (b1_x, btn_y1, b1_x + btn_w, btn_y2), "WATCHING...", (0, 140, 200))
+            btn1 = GuiButton(
+                "START_TRIAL",
+                (b1_x, btn_y1, b1_x + btn_w, btn_y2),
+                "WATCHING...",
+                (0, 140, 200),
+            )
         elif trial_state == "TRACKING":
-            btn1 = GuiButton("START_TRIAL", (b1_x, btn_y1, b1_x + btn_w, btn_y2), "TRACKING...", (0, 180, 60))
+            btn1 = GuiButton(
+                "START_TRIAL",
+                (b1_x, btn_y1, b1_x + btn_w, btn_y2),
+                "TRACKING...",
+                (0, 180, 60),
+            )
         else:
-            btn1 = GuiButton("START_TRIAL", (b1_x, btn_y1, b1_x + btn_w, btn_y2), "LOCKED! (Next)", (40, 160, 40))
+            btn1 = GuiButton(
+                "START_TRIAL",
+                (b1_x, btn_y1, b1_x + btn_w, btn_y2),
+                "LOCKED! (Next)",
+                (40, 160, 40),
+            )
 
-        btn2 = GuiButton("RETRY", (b2_x, btn_y1, b2_x + btn_w, btn_y2), "RETRY (R)", (0, 140, 255))
-        btn3 = GuiButton("SNAPSHOT", (b3_x, btn_y1, b3_x + btn_w, btn_y2), "SNAPSHOT (S)", (140, 70, 20))
-        btn4 = GuiButton("NEXT_CLASS", (b4_x, btn_y1, b4_x + btn_w, btn_y2), "NEXT CLASS (N)", (160, 90, 40))
-        btn5 = GuiButton("QUIT", (b5_x, btn_y1, b5_x + btn_w, btn_y2), "QUIT (Q)", (40, 40, 180))
+        btn2 = GuiButton(
+            "RETRY", (b2_x, btn_y1, b2_x + btn_w, btn_y2), "RETRY (R)", (0, 140, 255)
+        )
+        btn3 = GuiButton(
+            "SNAPSHOT",
+            (b3_x, btn_y1, b3_x + btn_w, btn_y2),
+            "SNAPSHOT (S)",
+            (140, 70, 20),
+        )
+        btn4 = GuiButton(
+            "NEXT_CLASS",
+            (b4_x, btn_y1, b4_x + btn_w, btn_y2),
+            "NEXT CLASS (N)",
+            (160, 90, 40),
+        )
+        btn5 = GuiButton(
+            "QUIT", (b5_x, btn_y1, b5_x + btn_w, btn_y2), "QUIT (Q)", (40, 40, 180)
+        )
 
         active_buttons = [btn1, btn2, btn3, btn4, btn5]
 
         # Draw toast notification
         if now < toast_until:
-            cv2.rectangle(canvas, (CANVAS_WIDTH // 2 - 240, 60), (CANVAS_WIDTH // 2 + 240, 105), (0, 140, 0), -1)
-            cv2.rectangle(canvas, (CANVAS_WIDTH // 2 - 240, 60), (CANVAS_WIDTH // 2 + 240, 105), (255, 255, 255), 2)
-            cv2.putText(canvas, toast_msg, (CANVAS_WIDTH // 2 - 220, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+            cv2.rectangle(
+                canvas,
+                (CANVAS_WIDTH // 2 - 240, 60),
+                (CANVAS_WIDTH // 2 + 240, 105),
+                (0, 140, 0),
+                -1,
+            )
+            cv2.rectangle(
+                canvas,
+                (CANVAS_WIDTH // 2 - 240, 60),
+                (CANVAS_WIDTH // 2 + 240, 105),
+                (255, 255, 255),
+                2,
+            )
+            cv2.putText(
+                canvas,
+                toast_msg,
+                (CANVAS_WIDTH // 2 - 220, 92),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                (255, 255, 255),
+                2,
+            )
 
         for btn in active_buttons:
             btn.draw(canvas)
@@ -507,6 +756,7 @@ def run_locking_benchmark(trials_per_class: int = 10):
 
         if action == "START_TRIAL":
             if trial_state == "READY_PROMPT":
+                trial_start_time = time.perf_counter()
                 trial_state = "SEARCHING"
                 hit_count = 0
             elif trial_state == "LOCKED_PAUSE":
@@ -526,9 +776,15 @@ def run_locking_benchmark(trials_per_class: int = 10):
     generate_locking_summary(results_by_class, classes, saved_screenshots)
 
 
-def generate_locking_summary(results: dict[str, list[float]], classes: list, screenshots: dict):
-    print_banner("TARGET LOCKING AND DETECTION STABILITY BENCHMARK RESULTS (SECTION 3.2.6)")
-    print(f"{'Object':<16} | {'Trials':<6} | {'Mean time to lock (s)':<22} | {'Min (s)':<8} | {'Max (s)':<8} | {'Within 3 s (%)':<14}")
+def generate_locking_summary(
+    results: dict[str, list[float]], classes: list, screenshots: dict
+):
+    print_banner(
+        "TARGET LOCKING AND DETECTION STABILITY BENCHMARK RESULTS (SECTION 3.2.6)"
+    )
+    print(
+        f"{'Object':<16} | {'Trials':<6} | {'Mean time to lock (s)':<22} | {'Min (s)':<8} | {'Max (s)':<8} | {'Within 3 s (%)':<14}"
+    )
     print("-" * 88)
 
     all_times = []
@@ -549,9 +805,13 @@ def generate_locking_summary(results: dict[str, list[float]], classes: list, scr
             total_trials += n
             total_within_3s += within
 
-            print(f"{w.label:<16} | {n:<6} | {f'{mean_t:.2f} s':>22} | {f'{min_t:.2f} s':>8} | {f'{max_t:.2f} s':>8} | {f'{pct:.1f}%':>14}")
+            print(
+                f"{w.label:<16} | {n:<6} | {f'{mean_t:.2f} s':>22} | {f'{min_t:.2f} s':>8} | {f'{max_t:.2f} s':>8} | {f'{pct:.1f}%':>14}"
+            )
         else:
-            print(f"{w.label:<16} | {'0':<6} | {'--':>22} | {'--':>8} | {'--':>8} | {'--':>14}")
+            print(
+                f"{w.label:<16} | {'0':<6} | {'--':>22} | {'--':>8} | {'--':>8} | {'--':>14}"
+            )
 
     print("-" * 88)
     if total_trials > 0:
@@ -559,11 +819,15 @@ def generate_locking_summary(results: dict[str, list[float]], classes: list, scr
         overall_min = min(all_times)
         overall_max = max(all_times)
         overall_pct = (total_within_3s / total_trials) * 100.0
-        print(f"{'OVERALL MEAN':<16} | {total_trials:<6} | {f'{overall_mean:.2f} s':>22} | {f'{overall_min:.2f} s':>8} | {f'{overall_max:.2f} s':>8} | {f'{overall_pct:.1f}%':>14}")
+        print(
+            f"{'OVERALL MEAN':<16} | {total_trials:<6} | {f'{overall_mean:.2f} s':>22} | {f'{overall_min:.2f} s':>8} | {f'{overall_max:.2f} s':>8} | {f'{overall_pct:.1f}%':>14}"
+        )
     print("=" * 88)
 
     print("\nTarget Stability Metric:")
-    print("  - Unintended target changes per minute during active practice: 0.0 changes/min (Verified via Sticky Target policy)")
+    print(
+        "  - Unintended target changes per minute during active practice: 0.0 changes/min (Verified via Sticky Target policy)"
+    )
 
     if screenshots:
         print("\n" + "=" * 88)
@@ -577,8 +841,15 @@ def generate_locking_summary(results: dict[str, list[float]], classes: list, scr
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="See2Speak Target Locking Benchmark Tool")
-    parser.add_argument("--trials", type=int, default=10, help="Number of trials per object class (default: 10)")
+    parser = argparse.ArgumentParser(
+        description="See2Speak Target Locking Benchmark Tool"
+    )
+    parser.add_argument(
+        "--trials",
+        type=int,
+        default=10,
+        help="Number of trials per object class (default: 10)",
+    )
     args = parser.parse_args()
 
     run_locking_benchmark(trials_per_class=args.trials)
