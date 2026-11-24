@@ -1,4 +1,0 @@
-object,trial,outcome,seconds,locked_word,inference_ms
-Book,1,timeout,10.0,,537.6
-Book,2,ok,6.356,Book,488.7
-Book,3,ok,6.536,Book,510.9
