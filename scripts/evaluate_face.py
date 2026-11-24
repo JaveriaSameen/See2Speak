@@ -397,7 +397,7 @@ def run_face_benchmark():
         if cur_phase["type"] == "calib":
             cv2.putText(canvas, "Keep lips relaxed until baseline bar reaches 100%.", (h_x1 + 25, h_y1 + 310), cv2.FONT_HERSHEY_SIMPLEX, 0.60, (255, 255, 255), 1)
             if baseline:
-                cv2.putText(canvas, "✅ Calibration Complete! Click [NEXT PHASE (N)]", (h_x1 + 25, h_y1 + 355), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
+                cv2.putText(canvas, "✓ Calibration Complete! Click [NEXT PHASE (N)]", (h_x1 + 25, h_y1 + 355), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
 
                 if "Calibration" not in saved_screenshots:
                     shot_path = SCREENSHOTS_DIR / "face_calibration_mesh.png"
