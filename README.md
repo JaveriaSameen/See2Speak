@@ -1,210 +1,118 @@
 # See2Speak
 
-See2Speak is a webcam-based vocabulary game. Show an object to the camera, hear its name, say the word, and earn points for a matching answer. The app combines object detection, local speech recognition, and optional mouth-movement feedback in a small browser game.
+See2Speak is a webcam-based English vocabulary game. Show an object, listen to its name, then say the word to earn points. The browser sends camera frames and recordings to a local Python server for inference.
 
-## Vocabulary
+The game supports **Book, Cell phone, Apple, Pen, Water bottle, and Scissors**.
 
-The game currently recognizes these six targets:
+![A person with lip landmark dots holds up a book outlined by a detection box. See2Speak shows Book as the practice word and a score of 10 points.](assets/gameplay.jpg)
 
-**Book · Cell phone · Apple · Pen · Water bottle · Scissors**
+*Example gameplay with a staged camera feed and score. MediaPipe detected the lip landmarks in the staged frame.*
 
-The vocabulary, detection prompts, accepted spoken forms, and thresholds are configured in [`backend/config.py`](backend/config.py).
+## Quick start
 
-## How a round works
+You’ll need Python 3.11 (the repository default), a webcam, a microphone, a modern browser, and an internet connection for the first model download.
 
-1. The browser sends webcam frames to the local server for object detection.
-2. A detected object is shown with a labelled box. If several objects appear, select the one you want to practice.
-3. Choose **Listen to Pronunciation** to hear the target. The game uses an optional MP3 recording when present, otherwise it uses the browser's English text-to-speech voice.
-4. Choose **Record** and say the word. The browser records a short audio clip and sends it to the server.
-5. Whisper transcribes the clip locally. The app normalizes the transcript and compares it with the target's accepted forms.
-6. A correct answer earns 10 points. Each word pays out once per session by default. A close answer can receive “Close!” feedback but does not score as correct.
+1. From the project root, create a virtual environment. Use either setup method throughout.
 
-MediaPipe can also estimate mouth movement from webcam frames. The player calibrates a relaxed-mouth baseline at the start. This result is supplementary feedback: it does not change scoring, identify what was said, or verify that a person spoke live.
+   | Method | Command |
+   | --- | --- |
+   | Python `venv` + `pip` | `python -m venv .venv` |
+   | `uv` (if installed) | `uv venv --python 3.11 .venv` |
 
-## Requirements
+2. Activate it with the command for your shell.
 
-- Python 3.10–3.12 recommended (the repository's `.python-version` is 3.11).
-- A webcam and microphone.
-- A modern browser such as Chrome, Edge, or Firefox.
-- Internet access for the initial model download.
-- Enough disk space and memory for PyTorch, YOLO-World, Whisper, and MediaPipe.
+   | Shell | Command |
+   | --- | --- |
+   | macOS or Linux | `source .venv/bin/activate` |
+   | Windows PowerShell | `& .\.venv\Scripts\Activate.ps1` |
 
-All inference runs locally after setup; the application does not send audio to a hosted transcription service.
+3. Install dependencies using the same method.
 
-## Setup
+   | Method | Command |
+   | --- | --- |
+   | Python `venv` + `pip` | `python -m pip install -r requirements.txt` |
+   | `uv` | `uv pip install -r requirements.txt` |
 
-Create and activate a virtual environment, then install dependencies:
+4. Prepare the models and start the app.
 
-```powershell
-uv venv --python 3.11 .venv
-.venv\Scripts\Activate.ps1
-uv pip install -r requirements.txt
-```
+   ```sh
+   python scripts/download_models.py
+   python run.py
+   ```
 
-Or use Python's built-in environment manager and pip:
+The launcher opens [http://localhost:8000](http://localhost:8000). Use that address if the browser doesn’t open automatically. Models load in the background and the system panel shows when they’re ready. Press **Ctrl+C** in the terminal to stop the server.
 
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-```
+## How to play
 
-On macOS or Linux, activate the environment with `source .venv/bin/activate`.
+1. Select **Start game** and allow camera access. When prompted, relax your mouth to calibrate the optional movement feedback, or select **Skip**.
+2. Hold up a supported object. The game selects a target after two sightings, or you can click a detection box to choose one yourself. The selected word stays active even if its box disappears. Select **Change** to clear it and look for another object.
+3. Select **Listen** to hear the word, then **Record** and say it. Allow microphone access when prompted. Select **Stop recording** to submit the clip early, or let the recording end automatically.
+4. A correct answer earns **10 points** the first time you get that word right in the session. Accepted aliases count as correct. Near matches get feedback and earn zero points. Select **Finish** to see your score and session history.
 
-Download the required model assets:
+Mouth-movement feedback uses webcam landmarks and is separate from scoring. Points depend on the transcript matching the selected word.
 
-```powershell
-python scripts/download_models.py
-```
+### Accepted spoken answers
 
-The model files are stored in `models/` and are intentionally excluded from Git. The setup script also prepares the local Whisper model and detector assets as supported by the installed dependencies.
+| Object | What you can say |
+| --- | --- |
+| Book | book |
+| Cell phone | cell phone, cellphone, phone, mobile phone, mobile |
+| Apple | apple |
+| Pen | pen |
+| Water bottle | water bottle, bottle, flask, water flask |
+| Scissors | scissors, scissor |
 
-## Run
+A leading “a”, “an”, or “the” is optional. For example, “an apple” counts as “apple”.
 
-Start the app with the launcher:
+## How it works
 
-```powershell
-python run.py
-```
+| Part | Role |
+| --- | --- |
+| [Browser interface](frontend/) | Captures camera frames and audio, draws boxes, selects the practice target, and displays feedback. |
+| [FastAPI server](backend/main.py) | Serves the browser interface and handles detection, calibration, spoken attempts, and sessions. |
+| [YOLO-World](backend/detection.py) | Detects objects using text prompts for each vocabulary entry. |
+| [Whisper](backend/speech_recognition.py) | Transcribes recordings locally. The default model is `base.en`. |
+| [MediaPipe Face Landmarker](backend/facial_landmarks.py) | Tracks lip landmarks and estimates movement relative to a relaxed-mouth baseline. |
+| [Game logic](backend/game_logic.py) | Normalizes and matches transcripts, awards points, and stores attempts and scores in `data/see2speak.sqlite3`. |
 
-The launcher checks for model files, starts the server at `http://127.0.0.1:8000`, and opens the page in a browser. Use `Ctrl+C` in the terminal to stop it.
+[Configuration](backend/config.py) defines the vocabulary, detection prompts, accepted answers, scoring rules, and model thresholds. The downloader puts detector and face-landmarker assets in `models/` and prepares the Whisper cache. Model files and runtime data are excluded from Git.
 
-Useful options:
+### Options
 
-```powershell
-python run.py --no-browser
-python run.py --port 8080
-python run.py --whisper tiny.en
-python run.py --min-conf 0.80
-```
+| To do this | Run |
+| --- | --- |
+| Start without opening a browser | `python run.py --no-browser` |
+| Use another port | `python run.py --port 8080` |
+| Use the smaller Whisper model | `python run.py --whisper tiny.en` |
+| Set the global detection confidence threshold | `python run.py --min-conf 0.85` |
+| Start FastAPI directly after preparing the models | `python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000` |
 
-Alternatively, start the server directly:
+For custom pronunciation audio, place MP3 files in [`frontend/assets/audio/`](frontend/assets/audio/) using the vocabulary key as the filename, such as `book.mp3` or `cell_phone.mp3`. The browser uses speech synthesis if the file is missing.
 
-```powershell
-uvicorn backend.main:app --host 127.0.0.1 --port 8000
-```
+## Interactive benchmarks
 
-Open the page through `http://localhost` or `http://127.0.0.1`. Do not open `frontend/index.html` as a file: browsers restrict camera and microphone access on `file://` pages. Allow camera access when prompted; allow microphone access when you first record.
+Run these from the project root in the same virtual environment. They open desktop OpenCV windows and use the webcam or microphone directly. They run independently of the browser game, print summaries to the terminal, and save screenshots under `docs/screenshots/`.
 
-## Models and configuration
+| Benchmark | Command | What it measures |
+| --- | --- | --- |
+| Object detection | `python scripts/evaluate_system.py --trials 10` | Precision, recall, F1, hit rate, confidence, and latency on timed webcam captures. A negative-control phase measures how often the detector correctly returns no boxes. |
+| Target locking | `python scripts/evaluate_locking.py --trials 10` | Mean, minimum, and maximum lock times, plus the percentage of completed trials that lock within 3 seconds. |
+| Speech recognition | `python scripts/evaluate_speech.py --trials 10` | Expected decision vs. actual decision and average transcription time for exact answers, aliases, near matches, wrong words, and silence or noise. |
+| Facial landmarks | `python scripts/evaluate_face.py` | Neutral-mouth calibration time, movement during speech vs. at rest, and lip closure at the start of words beginning with **B** or **P**. |
+| Whisper vocabulary hint | `python scripts/evaluate_whisper_hint.py --speaker S1 --reps 2` | Transcribes each recording twice, with and without the vocabulary hint, and compares the resulting decisions. |
 
-- **Object detection:** Ultralytics YOLO-World, using the project's configured pretrained weights and vocabulary prompts.
-- **Speech recognition:** OpenAI Whisper, defaulting to `base.en`. Set `SEE2SPEAK_WHISPER=tiny.en` or pass `--whisper tiny.en` for a faster, less accurate option.
-- **Mouth feedback:** MediaPipe Face Landmarker.
-- **Persistence:** SQLite session and score history under `data/`.
-
-Models load in the background after server startup. The interface's system panel reports their status. If a model is missing, run `python scripts/download_models.py`.
-
-To change the words or scoring behavior, edit `backend/config.py`. Detection prompts and accepted spoken aliases are defined per vocabulary entry. The default correct-answer award is 10 points and `AWARD_ONCE_PER_WORD` limits each word to one payout per session. The mouth movement thresholds are also configurable there.
-
-## Optional pronunciation recordings
-
-Place MP3 files in `frontend/assets/audio/`, named after the vocabulary key in `backend/config.py`, for example:
-
-```text
-book.mp3  cell_phone.mp3  apple.mp3  pen.mp3  water_bottle.mp3  scissors.mp3
-```
-
-If a file is missing, the browser's built-in speech synthesis is used.
-
-## Evaluation and System Benchmark
-
-To evaluate live object detection performance and compute formal computer vision metrics (Precision, Recall, F1-Score, Accuracy, and Latency), run the evaluation tool:
-
-```powershell
-python scripts/evaluate_system.py --trials 10
-```
-
-### Benchmark Features
-- **Widescreen 1280×720 UI**: High-visibility camera canvas with large text, prominent status banners, and live bounding box overlays.
-- **Asynchronous Threading (30+ FPS)**: Runs camera capture and UI rendering independently from YOLO-World inference, ensuring a smooth webcam feed with zero motion lag.
-- **Interactive Session Control**:
-  - **`[START]` (Space/Enter)**: Opens each object in preparation mode so you can position the object and verify detection before testing starts.
-  - **`[PAUSE]` / `[RESUME]` (Space/P)**: Pauses the automated timer at any moment to adjust positioning.
-  - **`[NEXT CLASS]` (N)**: Moves to the next vocabulary class at your own pace.
-  - **`[QUIT]` (Q)**: Exits early and immediately calculates the summary table.
-- **Automated Paced Capture**: Records trials at configurable intervals (default: 2.0s) with an 0.8-second visual freeze confirmation displaying the logged box and HIT/MISS status.
-- **Automated Report Screenshots**: Automatically saves high-resolution, annotated bounding-box images of your best detections into `docs/screenshots/` (e.g. `detection_book.png`, `detection_apple.png`, `detection_negative_control.png`). You can also press **`[S]`** or click **`[SNAPSHOT]`** anytime to capture an instant image.
-- **Negative Control Testing**: Evaluates background and unsupported everyday objects (e.g., mugs, keys, empty hands) to measure rejection specificity.
-- **Automated Metrics Table**: Generates a complete computer vision evaluation table ready for project reports:
-  - Per-class Precision, Recall, F1-Score, and Accuracy (at $\ge 0.80$ confidence)
-  - True Negative Specificity for Negative Control
-  - Average detection confidence and inference latency in milliseconds
-  - Overall Mean across all evaluated trials
-
-### Command Line Options
-```powershell
-# Custom trial count per object (e.g., 15 trials per class and 15 negative control trials)
-python scripts/evaluate_system.py --trials 15
-
-# Custom capture interval (e.g., 2.5 seconds between automatic captures)
-python scripts/evaluate_system.py --trials 10 --interval 2.5
-```
-
-### Speech Recognition Benchmark
-
-To evaluate Whisper `base.en` speech transcription and the game's answer matching logic across the 5 evaluation categories (Exact Match, Alias Match, Near Match, Wrong Word, Silence/Noise) in a dedicated **1280×720 graphical window**, run:
-
-```powershell
-python scripts/evaluate_speech.py --trials 10
-```
-
-- **Graphical Guidance Window (1280×720)**: Displays target words, instructions on what to say, and the expected system decision on a sleek presentation canvas.
-- **Interactive UI Buttons**: Click **`[RECORD / NEXT]`** (Space), **`[RETRY]`** (R), **`[SNAPSHOT]`** (S), **`[NEXT CAT]`** (N), and **`[QUIT]`** (Q).
-- **Automated Category Screenshots**: Automatically saves high-resolution verification screenshots to `docs/screenshots/` (e.g. `speech_exact_match.png`, `speech_alias_match.png`) for direct insertion into your report.
-- **Metrics Table**: Outputs the complete empirical decision match table matching **Table 2** of the project report.
-
-### Facial Landmark & Mouth Movement Benchmark
-
-To evaluate MediaPipe Face Landmarker, neutral-mouth baseline calibration, movement sensitivity ($\Delta \ge 0.05$), and bilabial lip closure ('B' and 'P') in a **1280×720 split-screen interactive window**, run:
-
-```powershell
-python scripts/evaluate_face.py
-```
-
-- **Interactive Split-Screen Window (1280×720)**: Shows your live camera feed overlaid with the real-time **cyan/magenta lip mesh** and **yellow eye tracking line** alongside numerical metrics and gauge bars.
-- **Three Progressive Evaluation Phases**:
-  1. *Neutral-Mouth Calibration*: Verifies baseline convergence across 20 stable frames.
-  2. *Movement Detection Sensitivity*: Tests speech movement vs. resting mouth controls.
-  3. *Bilabial Lip Closure*: Tests initial pre-phonation closure for 'B' & 'P' vocabulary words.
-- **Automated Screenshots**: Saves high-resolution verification images into `docs/screenshots/` (`face_calibration_mesh.png`, `face_speech_movement.png`, `face_bilabial_closure.png`).
-- **Metrics Table**: Outputs the empirical evaluation table matching **Table 3** of the project report.
-
-### Target Locking & Detection Stability Benchmark (Section 3.2.6)
-
-To empirically evaluate target locking speed and stability across the 6 vocabulary objects in a dedicated **1280×720 interactive window**, run:
-
-```powershell
-python scripts/evaluate_locking.py --trials 10
-```
-
-- **Replicates Browser Tracking Logic**: Implements the identical 2-sighting criterion (`LOCK_HITS = 2`) and 500 ms grace period (`BOX_GRACE_MS = 500`) from `frontend/script.js`.
-- **Automatic Stopwatch** starts when you select **Start Trial** and stops when the second qualifying detection locks the target.
-- **Goal Verification (<= 3.00s)**: Verifies whether target lock occurs within the proposal's 3-second design goal.
-- **Metrics Table**: Automatically calculates Mean time to lock, Min, Max, and % Within 3.0s across all 10 trials per class.
-
-### Whisper Vocabulary-Hint Ablation Benchmark (Section 3.3.2)
-
-To evaluate the impact of the `initial_prompt` vocabulary hint on Whisper speech recognition in a dedicated **1280×720 graphical window**, run:
-
-```powershell
-python scripts/evaluate_whisper_hint.py --speaker S1 --reps 2
-```
-
-- **Interactive 1280×720 GUI**: Shows prompt cards (word to say, category, expected outcome) with an animated red audio recording meter.
-- **Automated Double-Transcription**: Transcribes each audio clip twice with identical deterministic settings—once with `Hint ON` and once with `Hint OFF`.
-- **Automatic Screenshot**: Saves a high-resolution screenshot of the final comparison table to `docs/screenshots/whisper_hint_ablation.png`.
-- **Metrics Table**: Outputs the exact filled table and summary paragraph for Section 3.3.2 of the project report.
+- **Target locking.** The stopwatch starts when you select **Start Trial** and stops when the second qualifying detection locks the target. If more than **500 ms** passes after the first hit, the next detection starts a new pair while the stopwatch keeps running.
+- **Object detection.** Use `--interval` to change the delay between captures from its default of 2 seconds.
+- **Whisper vocabulary hint.** Recordings are saved in `data/hint_ablation/`. Pass `--analyse` to analyze the saved WAV files again without recording new ones.
 
 ## Troubleshooting
 
-| Issue | Try this |
-|---|---|
-| The page cannot reach the server | Start `python run.py` or `uvicorn backend.main:app --port 8000`; open the matching localhost address. |
-| Camera or microphone is unavailable | Use localhost, allow the browser permission, and close other apps using the device. |
-| A model is missing | Run `python scripts/download_models.py`. |
-| YOLO-World reports a CLIP dependency error | Follow the Ultralytics/CLIP installation instructions for your environment. |
-| Whisper is too slow | Select `tiny.en` with `python run.py --whisper tiny.en`. |
-| No object is detected | Improve lighting, use a plain background, and hold the object closer to the camera. |
-| Speech is not recognized | Speak clearly near the selected microphone and reduce background noise. |
-| No pronunciation audio plays | Check system volume or add the word's MP3 file under `frontend/assets/audio/`. |
+| Problem | What to check |
+| --- | --- |
+| The page doesn’t load | Make sure `python run.py` is still running and open the localhost address for the port you chose. |
+| The browser can’t access the camera or microphone | Open the game through localhost, grant browser permissions, and close other apps using the device. |
+| A desktop benchmark can’t open the camera | Grant camera access to the terminal or app that launched it. The error reports the camera index it tried. |
+| A desktop benchmark can’t open a window | Check that your OpenCV build includes desktop GUI support. |
+| A model fails to load | Check the system panel for the error and rerun `python scripts/download_models.py` with internet access. |
+| An object is missed repeatedly | Use even lighting, hold the object steady, and move it closer to the camera. |
+| Speech recognition is slow | Try `python run.py --whisper tiny.en`. |
