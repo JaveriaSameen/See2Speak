@@ -3,12 +3,9 @@ __pycache__/
 .venv/
 venv/
 data/
+weights/
 models/*.pt
 models/*.task
 *.part
 .pytest_cache/
-
-weights/
-data/
-models/*.pt
-models/*.task
+docs/

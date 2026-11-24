@@ -203,8 +203,8 @@ def run_face_benchmark():
     trial_samples: list[MouthSample | None] = []
     trial_result: dict | None = None
 
-    stats_movement = {"trials": 0, "passed": 0}
-    stats_closure = {"trials": 0, "passed": 0}
+    results_movement: dict[int, bool] = {}
+    results_closure: dict[int, bool] = {}
 
     while not quit_all:
         ret, frame = cap.read()
@@ -259,16 +259,12 @@ def run_face_benchmark():
                 if cur_phase["id"] == "movement":
                     expect = cur_phase["trials"][trial_idx]["expect"]
                     is_pass = (analysis["status"] == expect)
-                    stats_movement["trials"] += 1
-                    if is_pass:
-                        stats_movement["passed"] += 1
+                    results_movement[trial_idx] = is_pass
 
                 elif cur_phase["id"] == "bilabial":
                     expect = cur_phase["trials"][trial_idx]["expect"]
                     is_pass = (analysis.get("lip_closure") == expect)
-                    stats_closure["trials"] += 1
-                    if is_pass:
-                        stats_closure["passed"] += 1
+                    results_closure[trial_idx] = is_pass
 
         # =====================================================================
         # RENDER 1280x720 BENCHMARK CANVAS
@@ -564,10 +560,10 @@ def run_face_benchmark():
     cap.release()
     cv2.destroyAllWindows()
 
-    generate_face_summary(calib_time_sec, stats_movement, stats_closure, mean_fps, saved_screenshots)
+    generate_face_summary(calib_time_sec, results_movement, results_closure, mean_fps, saved_screenshots)
 
 
-def generate_face_summary(calib_time: float, mvt_stats: dict, cls_stats: dict, avg_fps: float, screenshots: dict):
+def generate_face_summary(calib_time: float, mvt_results: dict[int, bool], cls_results: dict[int, bool], avg_fps: float, screenshots: dict):
     print_banner("FACIAL LANDMARK AND MOUTH MOVEMENT EVALUATION RESULTS")
     print(f"{'Metric / Feature':<32} | {'Expected Criterion':<24} | {'Trials':<6} | {'Passed':<6} | {'Accuracy (%)':<12}")
     print("-" * 92)
@@ -577,14 +573,14 @@ def generate_face_summary(calib_time: float, mvt_stats: dict, cls_stats: dict, a
     print(f"{'Neutral-Mouth Calibration':<32} | {'Converges in < 2.0s':<24} | {'1':<6} | {'1':<6} | {f'100.0% ({calib_str})':>12}")
 
     # 2. Speech movement
-    m_trials = mvt_stats["trials"]
-    m_passed = mvt_stats["passed"]
+    m_trials = len(mvt_results)
+    m_passed = sum(1 for v in mvt_results.values() if v)
     m_rate = (m_passed / m_trials * 100) if m_trials > 0 else 0.0
     print(f"{'Visible Movement Detection':<32} | {'Δ >= 0.05 vs. Still':<24} | {m_trials:<6} | {m_passed:<6} | {f'{m_rate:.1f}%':>12}")
 
     # 3. Bilabial closure
-    c_trials = cls_stats["trials"]
-    c_passed = cls_stats["passed"]
+    c_trials = len(cls_results)
+    c_passed = sum(1 for v in cls_results.values() if v)
     c_rate = (c_passed / c_trials * 100) if c_trials > 0 else 0.0
     print(f"{'Bilabial Lip Closure (B & P)':<32} | {'Initial Lip Contact':<24} | {c_trials:<6} | {c_passed:<6} | {f'{c_rate:.1f}%':>12}")
 
