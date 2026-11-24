@@ -179,7 +179,7 @@ python scripts/evaluate_locking.py --trials 10
 ```
 
 - **Replicates Browser Tracking Logic**: Implements the identical 2-sighting criterion (`LOCK_HITS = 2`) and 500 ms grace period (`BOX_GRACE_MS = 500`) from `frontend/script.js`.
-- **Automatic Stopwatch**: Automatically triggers when the object is first detected in the frame and records the exact time taken to achieve stable target lock.
+- **Automatic Stopwatch** starts when you select **Start Trial** and stops when the second qualifying detection locks the target.
 - **Goal Verification (<= 3.00s)**: Verifies whether target lock occurs within the proposal's 3-second design goal.
 - **Metrics Table**: Automatically calculates Mean time to lock, Min, Max, and % Within 3.0s across all 10 trials per class.
 
