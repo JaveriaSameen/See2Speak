@@ -402,16 +402,12 @@ def run_face_benchmark():
                 if cur_phase["id"] == "movement":
                     expect = cur_phase["trials"][trial_idx]["expect"]
                     is_pass = analysis["status"] == expect
-                    stats_movement["trials"] += 1
-                    if is_pass:
-                        stats_movement["passed"] += 1
+                    results_movement[trial_idx] = is_pass
 
                 elif cur_phase["id"] == "bilabial":
                     expect = cur_phase["trials"][trial_idx]["expect"]
                     is_pass = analysis.get("lip_closure") == expect
-                    stats_closure["trials"] += 1
-                    if is_pass:
-                        stats_closure["passed"] += 1
+                    results_closure[trial_idx] = is_pass
 
         # =====================================================================
         # RENDER 1280x720 BENCHMARK CANVAS
@@ -938,14 +934,14 @@ def run_face_benchmark():
     cv2.destroyAllWindows()
 
     generate_face_summary(
-        calib_time_sec, stats_movement, stats_closure, mean_fps, saved_screenshots
+        calib_time_sec, results_movement, results_closure, mean_fps, saved_screenshots
     )
 
 
 def generate_face_summary(
     calib_time: float,
-    mvt_stats: dict,
-    cls_stats: dict,
+    mvt_results: dict[int, bool],
+    cls_results: dict[int, bool],
     avg_fps: float,
     screenshots: dict,
 ):
