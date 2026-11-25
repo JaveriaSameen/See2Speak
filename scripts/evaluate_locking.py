@@ -197,9 +197,10 @@ def run_locking_benchmark(trials_per_class: int = 10):
     detector.load()
     print(f"[ok] Detector ready in {time.perf_counter() - t0:.2f}s\n")
 
-    cap = cv2.VideoCapture(0)
+    camera_index = 0
+    cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
-        print("[!] Error: Could not open camera (index 0).")
+        print(f"[!] Error: Could not open camera (index {camera_index}).")
         return
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
