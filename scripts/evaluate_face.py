@@ -702,12 +702,13 @@ def run_face_benchmark():
 
                 if cur_phase["id"] == "movement":
                     m_stat = trial_result.get("status")
+                    status_label = (m_stat or "unknown").upper()
                     expect = cur_phase["trials"][trial_idx]["expect"]
                     is_match = m_stat == expect
                     badge_col = (0, 255, 0) if is_match else (0, 0, 255)
                     cv2.putText(
                         canvas,
-                        f"RESULT: {m_stat.upper()}",
+                        f"RESULT: {status_label}",
                         (h_x1 + 45, h_y1 + 410),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.78,
@@ -897,11 +898,10 @@ def run_face_benchmark():
             print(f"  [📸] Saved manual snapshot: {snap_path.relative_to(ROOT)}")
             continue
 
-        if action == "RETRY":
-            if cur_phase["type"] == "trials":
-                trial_state = "READY"
-                trial_samples = []
-                trial_result = None
+        if action == "RETRY" and cur_phase["type"] == "trials":
+            trial_state = "READY"
+            trial_samples = []
+            trial_result = None
 
         if action == "NEXT_PHASE":
             phase_idx += 1
@@ -913,22 +913,21 @@ def run_face_benchmark():
                 break
             continue
 
-        if action == "ACTION_PRIMARY":
-            if cur_phase["type"] == "trials":
-                if trial_state == "READY":
-                    trial_state = "RECORDING"
-                    trial_start_time = time.perf_counter()
-                    trial_samples = []
-                elif trial_state == "RESULT":
-                    trial_idx += 1
-                    trial_state = "READY"
-                    trial_samples = []
-                    trial_result = None
-                    if trial_idx >= len(cur_phase["trials"]):
-                        phase_idx += 1
-                        trial_idx = 0
-                        if phase_idx >= len(phases):
-                            break
+        if action == "ACTION_PRIMARY" and cur_phase["type"] == "trials":
+            if trial_state == "READY":
+                trial_state = "RECORDING"
+                trial_start_time = time.perf_counter()
+                trial_samples = []
+            elif trial_state == "RESULT":
+                trial_idx += 1
+                trial_state = "READY"
+                trial_samples = []
+                trial_result = None
+                if trial_idx >= len(cur_phase["trials"]):
+                    phase_idx += 1
+                    trial_idx = 0
+                    if phase_idx >= len(phases):
+                        break
 
     cap.release()
     cv2.destroyAllWindows()

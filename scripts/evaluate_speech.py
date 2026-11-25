@@ -10,6 +10,7 @@ Features:
   6. Instant manual snapshot button [S].
   7. Outputs the full empirical table directly matching Table 2 in the project report.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -47,7 +48,13 @@ def print_banner(text: str):
 class GuiButton:
     """Clickable and renderable on-screen UI button for OpenCV windows."""
 
-    def __init__(self, key_id: str, rect: tuple[int, int, int, int], text: str, bg_color: tuple[int, int, int]):
+    def __init__(
+        self,
+        key_id: str,
+        rect: tuple[int, int, int, int],
+        text: str,
+        bg_color: tuple[int, int, int],
+    ):
         self.key_id = key_id
         self.rect = rect  # (x1, y1, x2, y2)
         self.text = text
@@ -65,13 +72,27 @@ class GuiButton:
 
         font_scale = 0.58
         thickness = 2
-        (tw, th), _ = cv2.getTextSize(self.text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+        (tw, th), _ = cv2.getTextSize(
+            self.text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
+        )
         tx = x1 + (x2 - x1 - tw) // 2
         ty = y1 + (y2 - y1 + th) // 2
-        cv2.putText(img, self.text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+        cv2.putText(
+            img,
+            self.text,
+            (tx, ty),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            (255, 255, 255),
+            thickness,
+        )
 
 
-def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: float = 2.0, device_idx: int | None = None):
+def run_graphical_speech_benchmark(
+    trials_per_cat: int = 10,
+    record_duration: float = 2.0,
+    device_idx: int | None = None,
+):
     window_name = "See2Speak Speech Benchmark (Live Evaluation)"
     SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -236,7 +257,7 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
 
             print(f"  [{cat_name} Trial {trial_idx + 1}/{trials_per_cat}]")
             print(f"    Target Word: {target_word.label}")
-            print(f"    What to Say: \"{what_to_say}\"")
+            print(f'    What to Say: "{what_to_say}"')
             print(f"    Expected:    {expected_decision}")
 
             trial_state = "READY"
@@ -256,18 +277,36 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
             def do_async_record():
                 nonlocal raw_audio_buffer
                 num_samples = int(record_duration * SAMPLE_RATE)
-                audio_data = sd.rec(num_samples, samplerate=SAMPLE_RATE, channels=1, dtype="int16", device=device_idx)
+                audio_data = sd.rec(
+                    num_samples,
+                    samplerate=SAMPLE_RATE,
+                    channels=1,
+                    dtype="int16",
+                    device=device_idx,
+                )
                 sd.wait()
                 raw_audio_buffer = audio_data
 
-            def do_async_transcribe():
-                nonlocal result_transcript, result_decision, result_detail, result_is_correct, result_rule_matched, result_latency
+            def do_async_transcribe(
+                audio_buffer,
+                target_word=target_word,
+                expected_decision=expected_decision,
+            ):
+                nonlocal \
+                    result_transcript, \
+                    result_decision, \
+                    result_detail, \
+                    result_is_correct, \
+                    result_rule_matched, \
+                    result_latency
+                if audio_buffer is None:
+                    return
                 buf = io.BytesIO()
                 with wave.open(buf, "wb") as wf:
                     wf.setnchannels(1)
                     wf.setsampwidth(2)
                     wf.setframerate(SAMPLE_RATE)
-                    wf.writeframes(raw_audio_buffer.tobytes())
+                    wf.writeframes(audio_buffer.tobytes())
                 wav_bytes = buf.getvalue()
 
                 t_start = time.perf_counter()
@@ -296,14 +335,16 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
                 result_decision = actual_decision
                 result_detail = decision_detail
                 result_is_correct = match_res.correct
-                result_rule_matched = (actual_decision == expected_decision)
+                result_rule_matched = actual_decision == expected_decision
 
             # Interactive render loop for this single trial
             while not quit_all:
                 now = time.perf_counter()
 
                 # Build 1280x720 canvas
-                canvas = np.full((CANVAS_HEIGHT, CANVAS_WIDTH, 3), (24, 28, 35), dtype=np.uint8)
+                canvas = np.full(
+                    (CANVAS_HEIGHT, CANVAS_WIDTH, 3), (24, 28, 35), dtype=np.uint8
+                )
 
                 # Top header bar (Height: 100)
                 cv2.rectangle(canvas, (0, 0), (CANVAS_WIDTH, 100), (16, 18, 24), -1)
@@ -353,7 +394,13 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
                 )
 
                 # Category badge
-                cv2.rectangle(canvas, (c_x1 + 45, c_y1 + 140), (c_x1 + 380, c_y1 + 180), (45, 54, 68), -1)
+                cv2.rectangle(
+                    canvas,
+                    (c_x1 + 45, c_y1 + 140),
+                    (c_x1 + 380, c_y1 + 180),
+                    (45, 54, 68),
+                    -1,
+                )
                 cv2.putText(
                     canvas,
                     f"Testing: {cat_name}",
@@ -366,8 +413,20 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
 
                 # Dynamic status area based on trial_state
                 if trial_state == "READY":
-                    cv2.rectangle(canvas, (c_x1 + 35, c_y1 + 205), (c_x2 - 35, c_y2 - 25), (28, 33, 42), -1)
-                    cv2.rectangle(canvas, (c_x1 + 35, c_y1 + 205), (c_x2 - 35, c_y2 - 25), (60, 70, 85), 1)
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 35, c_y1 + 205),
+                        (c_x2 - 35, c_y2 - 25),
+                        (28, 33, 42),
+                        -1,
+                    )
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 35, c_y1 + 205),
+                        (c_x2 - 35, c_y2 - 25),
+                        (60, 70, 85),
+                        1,
+                    )
 
                     cv2.putText(
                         canvas,
@@ -403,8 +462,20 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
                     pulse = (math.sin(now * 10) + 1.0) / 2.0
                     circle_color = (0, int(pulse * 60), int(200 + pulse * 55))
 
-                    cv2.rectangle(canvas, (c_x1 + 35, c_y1 + 205), (c_x2 - 35, c_y2 - 25), (35, 25, 30), -1)
-                    cv2.rectangle(canvas, (c_x1 + 35, c_y1 + 205), (c_x2 - 35, c_y2 - 25), (0, 0, 255), 2)
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 35, c_y1 + 205),
+                        (c_x2 - 35, c_y2 - 25),
+                        (35, 25, 30),
+                        -1,
+                    )
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 35, c_y1 + 205),
+                        (c_x2 - 35, c_y2 - 25),
+                        (0, 0, 255),
+                        2,
+                    )
 
                     cv2.circle(canvas, (c_x1 + 80, c_y1 + 285), 18, circle_color, -1)
                     cv2.circle(canvas, (c_x1 + 80, c_y1 + 285), 22, (255, 255, 255), 2)
@@ -420,17 +491,39 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
                     )
 
                     pct = min(1.0, elapsed_rec / record_duration)
-                    bar_w = (c_x2 - c_x1 - 140)
-                    cv2.rectangle(canvas, (c_x1 + 70, c_y1 + 345), (c_x1 + 70 + int(bar_w * pct), c_y1 + 370), (0, 0, 255), -1)
-                    cv2.rectangle(canvas, (c_x1 + 70, c_y1 + 345), (c_x1 + 70 + bar_w, c_y1 + 370), (255, 255, 255), 2)
+                    bar_w = c_x2 - c_x1 - 140
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 70, c_y1 + 345),
+                        (c_x1 + 70 + int(bar_w * pct), c_y1 + 370),
+                        (0, 0, 255),
+                        -1,
+                    )
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 70, c_y1 + 345),
+                        (c_x1 + 70 + bar_w, c_y1 + 370),
+                        (255, 255, 255),
+                        2,
+                    )
 
-                    if not rec_thread.is_alive():
+                    if rec_thread is not None and not rec_thread.is_alive():
                         trial_state = "TRANSCRIBING"
-                        trans_thread = threading.Thread(target=do_async_transcribe, daemon=True)
+                        trans_thread = threading.Thread(
+                            target=do_async_transcribe,
+                            args=(raw_audio_buffer,),
+                            daemon=True,
+                        )
                         trans_thread.start()
 
                 elif trial_state == "TRANSCRIBING":
-                    cv2.rectangle(canvas, (c_x1 + 35, c_y1 + 205), (c_x2 - 35, c_y2 - 25), (28, 33, 42), -1)
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 35, c_y1 + 205),
+                        (c_x2 - 35, c_y2 - 25),
+                        (28, 33, 42),
+                        -1,
+                    )
                     cv2.putText(
                         canvas,
                         "[..] Transcribing audio with OpenAI Whisper (base.en)...",
@@ -441,16 +534,20 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
                         2,
                     )
 
-                    if not trans_thread.is_alive():
+                    if trans_thread is not None and not trans_thread.is_alive():
                         trial_state = "RESULT"
 
                         # Auto-save category screenshot
                         if cat_name not in saved_screenshots:
                             shot_name = f"speech_{cat_id}.png"
                             shot_path = SCREENSHOTS_DIR / shot_name
-                            saved_screenshots[cat_name] = str(shot_path.relative_to(ROOT))
+                            saved_screenshots[cat_name] = str(
+                                shot_path.relative_to(ROOT)
+                            )
                             cv2.imwrite(str(shot_path), canvas)
-                            print(f"  [📸] Saved category screenshot: {shot_path.relative_to(ROOT)}")
+                            print(
+                                f"  [📸] Saved category screenshot: {shot_path.relative_to(ROOT)}"
+                            )
 
                 elif trial_state == "RESULT":
                     # Realistic pedagogical badge based on actual system score
@@ -471,15 +568,63 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
                         badge_color = (0, 0, 255)
                         card_border = (0, 0, 255)
 
-                    cv2.rectangle(canvas, (c_x1 + 35, c_y1 + 205), (c_x2 - 35, c_y2 - 25), (28, 33, 42), -1)
-                    cv2.rectangle(canvas, (c_x1 + 35, c_y1 + 205), (c_x2 - 35, c_y2 - 25), card_border, 2)
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 35, c_y1 + 205),
+                        (c_x2 - 35, c_y2 - 25),
+                        (28, 33, 42),
+                        -1,
+                    )
+                    cv2.rectangle(
+                        canvas,
+                        (c_x1 + 35, c_y1 + 205),
+                        (c_x2 - 35, c_y2 - 25),
+                        card_border,
+                        2,
+                    )
 
-                    cv2.putText(canvas, f"GAME RESULT:  {badge_text}", (c_x1 + 60, c_y1 + 265), cv2.FONT_HERSHEY_SIMPLEX, 0.88, badge_color, 2)
+                    cv2.putText(
+                        canvas,
+                        f"GAME RESULT:  {badge_text}",
+                        (c_x1 + 60, c_y1 + 265),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.88,
+                        badge_color,
+                        2,
+                    )
 
-                    disp_tr = result_transcript if result_transcript else "(No spoken words detected / Silent)"
-                    cv2.putText(canvas, f"Whisper Transcript:  \"{disp_tr}\"", (c_x1 + 60, c_y1 + 315), cv2.FONT_HERSHEY_SIMPLEX, 0.78, (255, 255, 255), 2)
-                    cv2.putText(canvas, f"Evaluation Detail:   {result_decision} [{result_detail}]", (c_x1 + 60, c_y1 + 358), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (0, 215, 255), 2)
-                    cv2.putText(canvas, f"Inference Latency:   {result_latency:.1f} ms", (c_x1 + 60, c_y1 + 398), cv2.FONT_HERSHEY_SIMPLEX, 0.68, (180, 180, 180), 2)
+                    disp_tr = (
+                        result_transcript
+                        if result_transcript
+                        else "(No spoken words detected / Silent)"
+                    )
+                    cv2.putText(
+                        canvas,
+                        f'Whisper Transcript:  "{disp_tr}"',
+                        (c_x1 + 60, c_y1 + 315),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.78,
+                        (255, 255, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        canvas,
+                        f"Evaluation Detail:   {result_decision} [{result_detail}]",
+                        (c_x1 + 60, c_y1 + 358),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.72,
+                        (0, 215, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        canvas,
+                        f"Inference Latency:   {result_latency:.1f} ms",
+                        (c_x1 + 60, c_y1 + 398),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.68,
+                        (180, 180, 180),
+                        2,
+                    )
 
                 # Render Bottom 5 Buttons Dock (y: 620 to 680)
                 btn_y1 = 620
@@ -496,26 +641,86 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
                 b5_x = b4_x + btn_w + gap
 
                 if trial_state == "READY":
-                    btn1 = GuiButton("ACTION_PRIMARY", (b1_x, btn_y1, b1_x + btn_w, btn_y2), "RECORD (Space)", (40, 160, 40))
+                    btn1 = GuiButton(
+                        "ACTION_PRIMARY",
+                        (b1_x, btn_y1, b1_x + btn_w, btn_y2),
+                        "RECORD (Space)",
+                        (40, 160, 40),
+                    )
                 elif trial_state == "RECORDING":
-                    btn1 = GuiButton("ACTION_PRIMARY", (b1_x, btn_y1, b1_x + btn_w, btn_y2), "RECORDING...", (0, 0, 200))
+                    btn1 = GuiButton(
+                        "ACTION_PRIMARY",
+                        (b1_x, btn_y1, b1_x + btn_w, btn_y2),
+                        "RECORDING...",
+                        (0, 0, 200),
+                    )
                 elif trial_state == "TRANSCRIBING":
-                    btn1 = GuiButton("ACTION_PRIMARY", (b1_x, btn_y1, b1_x + btn_w, btn_y2), "PROCESSING...", (80, 80, 80))
+                    btn1 = GuiButton(
+                        "ACTION_PRIMARY",
+                        (b1_x, btn_y1, b1_x + btn_w, btn_y2),
+                        "PROCESSING...",
+                        (80, 80, 80),
+                    )
                 else:  # RESULT
-                    btn1 = GuiButton("ACTION_PRIMARY", (b1_x, btn_y1, b1_x + btn_w, btn_y2), "NEXT TRIAL (Space)", (40, 160, 40))
+                    btn1 = GuiButton(
+                        "ACTION_PRIMARY",
+                        (b1_x, btn_y1, b1_x + btn_w, btn_y2),
+                        "NEXT TRIAL (Space)",
+                        (40, 160, 40),
+                    )
 
-                btn2 = GuiButton("RETRY", (b2_x, btn_y1, b2_x + btn_w, btn_y2), "RETRY (R)", (0, 140, 255))
-                btn3 = GuiButton("SNAPSHOT", (b3_x, btn_y1, b3_x + btn_w, btn_y2), "SNAPSHOT (S)", (140, 70, 20))
-                btn4 = GuiButton("NEXT_CAT", (b4_x, btn_y1, b4_x + btn_w, btn_y2), "NEXT CAT (N)", (160, 90, 40))
-                btn5 = GuiButton("QUIT", (b5_x, btn_y1, b5_x + btn_w, btn_y2), "QUIT (Q)", (40, 40, 180))
+                btn2 = GuiButton(
+                    "RETRY",
+                    (b2_x, btn_y1, b2_x + btn_w, btn_y2),
+                    "RETRY (R)",
+                    (0, 140, 255),
+                )
+                btn3 = GuiButton(
+                    "SNAPSHOT",
+                    (b3_x, btn_y1, b3_x + btn_w, btn_y2),
+                    "SNAPSHOT (S)",
+                    (140, 70, 20),
+                )
+                btn4 = GuiButton(
+                    "NEXT_CAT",
+                    (b4_x, btn_y1, b4_x + btn_w, btn_y2),
+                    "NEXT CAT (N)",
+                    (160, 90, 40),
+                )
+                btn5 = GuiButton(
+                    "QUIT",
+                    (b5_x, btn_y1, b5_x + btn_w, btn_y2),
+                    "QUIT (Q)",
+                    (40, 40, 180),
+                )
 
                 active_buttons = [btn1, btn2, btn3, btn4, btn5]
 
                 # Draw toast notification if active
                 if now < toast_until:
-                    cv2.rectangle(canvas, (CANVAS_WIDTH // 2 - 250, 60), (CANVAS_WIDTH // 2 + 250, 105), (0, 140, 0), -1)
-                    cv2.rectangle(canvas, (CANVAS_WIDTH // 2 - 250, 60), (CANVAS_WIDTH // 2 + 250, 105), (255, 255, 255), 2)
-                    cv2.putText(canvas, toast_msg, (CANVAS_WIDTH // 2 - 230, 92), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+                    cv2.rectangle(
+                        canvas,
+                        (CANVAS_WIDTH // 2 - 250, 60),
+                        (CANVAS_WIDTH // 2 + 250, 105),
+                        (0, 140, 0),
+                        -1,
+                    )
+                    cv2.rectangle(
+                        canvas,
+                        (CANVAS_WIDTH // 2 - 250, 60),
+                        (CANVAS_WIDTH // 2 + 250, 105),
+                        (255, 255, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        canvas,
+                        toast_msg,
+                        (CANVAS_WIDTH // 2 - 230, 92),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65,
+                        (255, 255, 255),
+                        2,
+                    )
 
                 for btn in active_buttons:
                     btn.draw(canvas)
@@ -546,24 +751,29 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
                     break
 
                 if action == "SNAPSHOT":
-                    snap_name = f"speech_{cat_id}_trial_{trial_idx + 1}_{int(time.time())}.png"
+                    snap_name = (
+                        f"speech_{cat_id}_trial_{trial_idx + 1}_{int(time.time())}.png"
+                    )
                     snap_path = SCREENSHOTS_DIR / snap_name
                     cv2.imwrite(str(snap_path), canvas)
                     toast_msg = f"[SNAPSHOT SAVED] {snap_name}"
                     toast_until = now + 1.5
-                    print(f"  [📸] Saved manual snapshot: {snap_path.relative_to(ROOT)}")
+                    print(
+                        f"  [📸] Saved manual snapshot: {snap_path.relative_to(ROOT)}"
+                    )
                     continue
 
-                if action == "RETRY":
-                    if trial_state in ("RESULT", "READY"):
-                        trial_state = "READY"
-                        continue
+                if action == "RETRY" and trial_state in ("RESULT", "READY"):
+                    trial_state = "READY"
+                    continue
 
                 if action == "ACTION_PRIMARY":
                     if trial_state == "READY":
                         trial_state = "RECORDING"
                         rec_start_time = time.perf_counter()
-                        rec_thread = threading.Thread(target=do_async_record, daemon=True)
+                        rec_thread = threading.Thread(
+                            target=do_async_record, daemon=True
+                        )
                         rec_thread.start()
                     elif trial_state == "RESULT":
                         stats[cat_id]["trials"] += 1
@@ -586,7 +796,9 @@ def run_graphical_speech_benchmark(trials_per_cat: int = 10, record_duration: fl
 
 def generate_speech_summary(stats: dict, saved_screenshots: dict[str, str]):
     print_banner("SPEECH RECOGNITION AND ANSWER EVALUATION BENCHMARK RESULTS")
-    print(f"{'Category':<18} | {'Expected Decision':<22} | {'Trials':<6} | {'Points Awarded':<14} | {'Correct Rate':<12} | {'Latency':<8}")
+    print(
+        f"{'Category':<18} | {'Expected Decision':<22} | {'Trials':<6} | {'Points Awarded':<14} | {'Correct Rate':<12} | {'Latency':<8}"
+    )
     print("-" * 92)
 
     total_trials = 0
@@ -594,27 +806,41 @@ def generate_speech_summary(stats: dict, saved_screenshots: dict[str, str]):
     total_rules = 0
     all_latencies = []
 
-    for cat_id, data in stats.items():
+    for data in stats.values():
         trials = data["trials"]
         correct = data["correct_awarded"]
         rate = (correct / trials) * 100 if trials > 0 else 0.0
-        avg_lat = (sum(data["latencies"]) / len(data["latencies"])) if data["latencies"] else 0.0
+        avg_lat = (
+            (sum(data["latencies"]) / len(data["latencies"]))
+            if data["latencies"]
+            else 0.0
+        )
 
         total_trials += trials
         total_correct += correct
         total_rules += data["rule_matched"]
         all_latencies.extend(data["latencies"])
 
-        print(f"{data['name']:<18} | {data['expected']:<22} | {trials:<6} | {f'{correct}/{trials}':<14} | {rate:>10.1f}% | {avg_lat:>6.1f}ms")
+        print(
+            f"{data['name']:<18} | {data['expected']:<22} | {trials:<6} | {f'{correct}/{trials}':<14} | {rate:>10.1f}% | {avg_lat:>6.1f}ms"
+        )
 
     print("-" * 92)
-    overall_correct_rate = (total_correct / total_trials) * 100 if total_trials > 0 else 0.0
-    overall_rule_fidelity = (total_rules / total_trials) * 100 if total_trials > 0 else 0.0
+    overall_correct_rate = (
+        (total_correct / total_trials) * 100 if total_trials > 0 else 0.0
+    )
+    overall_rule_fidelity = (
+        (total_rules / total_trials) * 100 if total_trials > 0 else 0.0
+    )
     overall_lat = (sum(all_latencies) / len(all_latencies)) if all_latencies else 0.0
 
-    print(f"{'OVERALL GAME TOTAL':<18} | {'Strict Scoring (+10)':<22} | {total_trials:<6} | {f'{total_correct}/{total_trials}':<14} | {overall_correct_rate:>10.1f}% | {overall_lat:>6.1f}ms")
+    print(
+        f"{'OVERALL GAME TOTAL':<18} | {'Strict Scoring (+10)':<22} | {total_trials:<6} | {f'{total_correct}/{total_trials}':<14} | {overall_correct_rate:>10.1f}% | {overall_lat:>6.1f}ms"
+    )
     print("=" * 92)
-    print(f"System Decision Fidelity: {total_rules}/{total_trials} ({overall_rule_fidelity:.1f}% of trials matched expected rule outcomes).")
+    print(
+        f"System Decision Fidelity: {total_rules}/{total_trials} ({overall_rule_fidelity:.1f}% of trials matched expected rule outcomes)."
+    )
 
     if saved_screenshots:
         print("\n" + "=" * 92)
@@ -628,10 +854,36 @@ def generate_speech_summary(stats: dict, saved_screenshots: dict[str, str]):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="See2Speak Graphical Speech Evaluation Benchmark Tool")
-    parser.add_argument("--trials", "-n", dest="trials", type=int, default=10, help="Trials per test category (default: 10)")
-    parser.add_argument("--duration", "-d", dest="duration", type=float, default=2.0, help="Recording capture duration in seconds (default: 2.0s)")
-    parser.add_argument("--device", dest="device", type=int, default=None, help="Input audio device index (optional)")
+    parser = argparse.ArgumentParser(
+        description="See2Speak Graphical Speech Evaluation Benchmark Tool"
+    )
+    parser.add_argument(
+        "--trials",
+        "-n",
+        dest="trials",
+        type=int,
+        default=10,
+        help="Trials per test category (default: 10)",
+    )
+    parser.add_argument(
+        "--duration",
+        "-d",
+        dest="duration",
+        type=float,
+        default=2.0,
+        help="Recording capture duration in seconds (default: 2.0s)",
+    )
+    parser.add_argument(
+        "--device",
+        dest="device",
+        type=int,
+        default=None,
+        help="Input audio device index (optional)",
+    )
     args = parser.parse_args()
 
-    run_graphical_speech_benchmark(trials_per_cat=args.trials, record_duration=args.duration, device_idx=args.device)
+    run_graphical_speech_benchmark(
+        trials_per_cat=args.trials,
+        record_duration=args.duration,
+        device_idx=args.device,
+    )
