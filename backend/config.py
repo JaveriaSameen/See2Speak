@@ -18,8 +18,8 @@ FRONTEND_DIR = ROOT / "frontend"
 YOLO_WEIGHTS = MODELS_DIR / "yolov8s-worldv2.pt"
 YOLO_BAKED_WEIGHTS = MODELS_DIR / "yolov8s-see2speak.pt"
 FACE_LANDMARKER_TASK = MODELS_DIR / "face_landmarker.task"
-# Whisper model: "base.en" per the proposal. Set SEE2SPEAK_WHISPER=tiny.en
-# if base.en is too slow on your laptop (the proposal names tiny.en as fallback).
+# Whisper model: "base.en". Set SEE2SPEAK_WHISPER=tiny.en
+# if base.en is too slow on your laptop (tiny.en as fallback).
 WHISPER_MODEL = os.environ.get("SEE2SPEAK_WHISPER", "base.en")
 DB_PATH = DATA_DIR / "see2speak.sqlite3"
 
@@ -149,7 +149,7 @@ DETECT_MIN_CONF = float(os.environ.get("SEE2SPEAK_MIN_CONF", "0.80"))
 # Set SEE2SPEAK_CALIBRATE=1 (default) to scale real matches into standard 0.80-0.95 range.
 CALIBRATE_CONFIDENCE = os.environ.get("SEE2SPEAK_CALIBRATE", "1") == "1"
 # Inference size (multiple of 32). 640 is YOLO's native resolution, giving 50% more detail
-# for small objects like pens and glue sticks. Override: SEE2SPEAK_IMGSZ=512
+# for small objects like pens. Override: SEE2SPEAK_IMGSZ=512
 DETECT_IMGSZ = int(os.environ.get("SEE2SPEAK_IMGSZ", "640"))
 DETECT_MAX_BOXES = 6
 DETECT_MAX_DET = 20
@@ -166,7 +166,7 @@ CROSS_MERGE_IOU = (
 # ---- Mouth movement check ---------------------------------------------------
 # All distances are normalised by the inter-ocular distance so they do not
 # depend on face size / camera distance. These are STARTING values: the
-# proposal says thresholds must be tuned on separate tuning recordings.
+# thresholds must be tuned on separate tuning recordings.
 MOUTH_CALIB_FRAMES = 15  # valid neutral-mouth samples needed to finish calibration
 MOUTH_CALIB_MAX_OPEN = (
     0.10  # a sample only counts if the mouth is at most this open (relaxed/closed)

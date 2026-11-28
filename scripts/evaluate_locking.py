@@ -3,7 +3,7 @@
 Directly benchmarks Section 3.2.6 of the project report:
   - Replicates frontend/script.js target locking logic (LOCK_HITS = 2, BOX_GRACE_MS = 500).
   - Measures the elapsed time from pressing Start Trial to target lock.
-  - Verifies whether target lock occurs within the 3.0-second proposal goal.
+  - Verifies whether target lock occurs within the 3.0-second goal.
   - Automatically computes Mean, Min, Max, and % Within 3.0s across 10 trials per class.
   - Verifies 0.0 unintended target changes per minute via sticky-target policy.
   - Automatically saves verification screenshots to docs/screenshots/locking_<class>.png.

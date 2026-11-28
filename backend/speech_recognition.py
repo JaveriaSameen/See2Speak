@@ -2,8 +2,9 @@
 
 The browser sends 16 kHz mono 16-bit WAV, so no ffmpeg is needed here.
 Whisper only TRANSCRIBES. A matching transcript does not prove the
-pronunciation was accurate (stated in the proposal).
+pronunciation was accurate.
 """
+
 from __future__ import annotations
 
 import io
@@ -15,7 +16,7 @@ import numpy as np
 from . import config
 
 MIN_SECONDS = 0.25
-SILENCE_RMS = 0.004      # below this the clip is treated as silence
+SILENCE_RMS = 0.004  # below this the clip is treated as silence
 
 
 class AudioError(ValueError):
@@ -34,9 +35,11 @@ def wav_to_float32(data: bytes) -> np.ndarray:
     audio = pcm.astype(np.float32) / 32768.0
     if ch > 1:
         audio = audio.reshape(-1, ch).mean(axis=1)
-    if rate != 16000:   # simple linear resample fallback
+    if rate != 16000:  # simple linear resample fallback
         n = int(len(audio) * 16000 / rate)
-        audio = np.interp(np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio).astype(np.float32)
+        audio = np.interp(
+            np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio
+        ).astype(np.float32)
     return audio
 
 
@@ -47,7 +50,8 @@ class Transcriber:
 
     def load(self):
         if self._model is None:
-            import whisper    # openai-whisper; downloads weights on first use
+            import whisper  # openai-whisper; downloads weights on first use
+
             self._model = whisper.load_model(config.WHISPER_MODEL)
 
     @property
@@ -58,16 +62,31 @@ class Transcriber:
         audio = wav_to_float32(wav_bytes)
         seconds = len(audio) / 16000
         if seconds < MIN_SECONDS:
-            raise AudioError("The recording was too short. Hold Record while you say the word.")
-        rms = float(np.sqrt(np.mean(audio ** 2)))
+            raise AudioError(
+                "The recording was too short. Hold Record while you say the word."
+            )
+        rms = float(np.sqrt(np.mean(audio**2)))
         if rms < SILENCE_RMS:
-            return {"text": "", "silent": True, "seconds": round(seconds, 2), "rms": rms}
+            return {
+                "text": "",
+                "silent": True,
+                "seconds": round(seconds, 2),
+                "rms": rms,
+            }
         self.load()
         with self._lock:
             vocab_prompt = ", ".join(w.label for w in config.VOCABULARY) + "."
             result = self._model.transcribe(
-                audio, language="en", fp16=False,
-                condition_on_previous_text=False, temperature=0.0,
-                initial_prompt=vocab_prompt)
-        return {"text": result["text"].strip(), "silent": False,
-                "seconds": round(seconds, 2), "rms": rms}
+                audio,
+                language="en",
+                fp16=False,
+                condition_on_previous_text=False,
+                temperature=0.0,
+                initial_prompt=vocab_prompt,
+            )
+        return {
+            "text": result["text"].strip(),
+            "silent": False,
+            "seconds": round(seconds, 2),
+            "rms": rms,
+        }
