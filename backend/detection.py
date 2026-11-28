@@ -3,7 +3,7 @@
 No training / fine-tuning: the vocabulary is given to the model as text prompts via
 set_classes(). Boxes are returned normalised (0..1) so the frontend can draw them on any video size.
 
-Speed notes (measured on the real network, see README):
+Speed notes:
   * almost all per-frame time is neural-net inference; it scales with image size (DETECT_IMGSZ);
   * the very first inference is much slower than later ones, so load() does a warm-up pass.
 Confidence: a detection is returned only if the model's OWN score is >= DETECT_MIN_CONF.

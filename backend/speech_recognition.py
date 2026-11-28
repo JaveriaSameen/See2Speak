@@ -63,7 +63,7 @@ class Transcriber:
         seconds = len(audio) / 16000
         if seconds < MIN_SECONDS:
             raise AudioError(
-                "The recording was too short. Hold Record while you say the word."
+                "The recording was too short. Press Record while you say the word."
             )
         rms = float(np.sqrt(np.mean(audio**2)))
         if rms < SILENCE_RMS:

@@ -41,6 +41,9 @@ def edit_distance(a: str, b: str) -> int:
         prev = cur
     return prev[-1]
 
+    # Insert a letter: bok -> book
+    # Delete a letter: books -> book
+    # Substitute a letter: pan -> pen
 
 @dataclass
 class MatchResult:
