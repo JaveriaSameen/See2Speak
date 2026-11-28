@@ -172,7 +172,7 @@ MOUTH_CALIB_MAX_OPEN = (
     0.10  # a sample only counts if the mouth is at most this open (relaxed/closed)
 )
 MOUTH_MIN_FRAMES = 4  # fewer valid face frames => "not enough data"
-MOUTH_OPEN_DELTA = 0.05  # max opening above baseline that counts as movement
-MOUTH_WIDTH_DELTA = 0.08  # max |width change| that counts as movement
+MOUTH_OPEN_DELTA = 0.05  # min opening above baseline that counts as movement
+MOUTH_WIDTH_DELTA = 0.08  # min |width change| that counts as movement
 MOUTH_CLOSURE_MAX = 0.03  # opening at/below this (+baseline) = lips closed
 LIP_CLOSURE_LETTERS = ("b", "p", "m")
